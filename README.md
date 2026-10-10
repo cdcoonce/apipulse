@@ -30,3 +30,7 @@ The badge shows reachable days out of 30 and median latency.
 `project.html` is the project page: it states exactly what a probe sends (a single `GET` per API per day, the `User-Agent` header, no credentials, no body) and how to opt out. `removed.html` lists APIs removed at the maintainer's request, so their absence is not read as death.
 
 To opt out, open an issue at <https://github.com/cdcoonce/apipulse/issues> titled `opt-out: <host>`. The maintainer adds the host to `data/optout.json`; the next `refresh-inventory` stops probing it, records it, and the next `render` moves it from the index to `removed.html`.
+
+## Deployment
+
+See [deploy/README.md](deploy/README.md) for the rammingspeed runbook (cron, systemd, verify script, rollback).

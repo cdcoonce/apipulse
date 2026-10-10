@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cdcoonce.apipulse.probe</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>cd /Users/cdcoonce/src/apipulse &amp;&amp; /Users/cdcoonce/.local/bin/uv run --frozen apipulse probe &amp;&amp; /Users/cdcoonce/.local/bin/uv run --frozen apipulse render</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/cdcoonce/Library/Logs/apipulse/probe.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cdcoonce/Library/Logs/apipulse/probe.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>APIPULSE_DATA_DIR</key>
+        <string>/Users/cdcoonce/src/apipulse/data</string>
+    </dict>
+</dict>
+</plist>

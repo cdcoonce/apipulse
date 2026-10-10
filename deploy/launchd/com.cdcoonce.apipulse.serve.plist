@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cdcoonce.apipulse.serve</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/cdcoonce/.local/bin/uv</string>
+        <string>run</string>
+        <string>--frozen</string>
+        <string>apipulse</string>
+        <string>serve</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8080</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/cdcoonce/src/apipulse</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/cdcoonce/Library/Logs/apipulse/serve.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cdcoonce/Library/Logs/apipulse/serve.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>APIPULSE_DATA_DIR</key>
+        <string>/Users/cdcoonce/src/apipulse/data</string>
+    </dict>
+</dict>
+</plist>
