@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from apipulse.inventory import host_of, load_optout, load_seed
@@ -15,3 +16,8 @@ def test_committed_seed_is_well_formed():
 
 def test_committed_optout_is_empty():
     assert load_optout(DATA / "optout.json") == set()
+
+
+def test_apis_guru_fixture_parses_with_six_keys():
+    path = Path(__file__).parent / "fixtures" / "apis_guru_list.json"
+    assert len(json.loads(path.read_text())) == 6
