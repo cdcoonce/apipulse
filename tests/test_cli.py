@@ -26,10 +26,26 @@ def test_help_lists_all_subcommands(capsys):
         assert name in out
 
 
-@pytest.mark.parametrize("command", ["render", "serve"])
+@pytest.mark.parametrize("command", ["render"])
 def test_subcommand_is_a_stub_that_returns_zero(command, capsys):
     assert main([command]) == 0
     assert capsys.readouterr().out.splitlines()[0] == f"{command}: not implemented"
+
+
+def test_serve_passes_host_port_and_settings_to_server(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr("apipulse.cli._serve", lambda *args: calls.append(args))
+    argv = ["serve", "--host", "0.0.0.0", "--port", "9090", "--data-dir", str(tmp_path)]
+    assert main(argv) == 0
+    [(settings, host, port)] = calls
+    assert (settings.data_dir, host, port) == (tmp_path, "0.0.0.0", 9090)
+
+
+def test_serve_defaults_to_loopback_8080(monkeypatch):
+    calls = []
+    monkeypatch.setattr("apipulse.cli._serve", lambda *args: calls.append(args))
+    assert main(["serve"]) == 0
+    assert [(host, port) for _, host, port in calls] == [("127.0.0.1", 8080)]
 
 
 def test_no_subcommand_prints_usage_and_returns_two(capsys):

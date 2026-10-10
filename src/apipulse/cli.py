@@ -3,11 +3,19 @@ from pathlib import Path
 
 from apipulse import __version__
 from apipulse.commands import refresh_inventory
-from apipulse.config import resolve_settings
+from apipulse.config import Settings, resolve_settings
 from apipulse.prober import probe, to_json
 from apipulse.runner import format_summary, run_probes
 
 COMMANDS = ("refresh-inventory", "probe", "render", "serve")
+
+
+def _serve(settings: Settings, host: str, port: int) -> None:
+    import uvicorn
+
+    from apipulse.api import create_app
+
+    uvicorn.run(create_app(settings), host=host, port=port)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
         command_parser.add_argument("--data-dir", type=Path, default=None)
         if name == "refresh-inventory":
             command_parser.add_argument("--source", default="seed,apis.guru")
+        if name == "serve":
+            command_parser.add_argument("--host", default="127.0.0.1")
+            command_parser.add_argument("--port", type=int, default=8080)
     probe_one = sub.add_parser("probe-one")
     probe_one.add_argument("url")
     probe_one.add_argument("--timeout-s", type=float, default=10.0)
@@ -35,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "probe":
         print(format_summary(run_probes(settings)))
+        return 0
+    if args.command == "serve":
+        _serve(settings, args.host, args.port)
         return 0
     print(f"{args.command}: not implemented")
     print(f"data_dir: {settings.data_dir}")
