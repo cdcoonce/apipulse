@@ -346,6 +346,51 @@ def test_history_table_is_anchored_to_the_data_not_the_wall_clock(tmp_path):
     ]
 
 
+def test_anchor_is_the_newest_rollup_when_rollups_were_computed_on_different_days(tmp_path):
+    # Inactive APIs are not recomputed, so their rollups keep an old computed_at.
+    # The window must follow the newest computation, not the stalest one.
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, [_rec("alpha"), _rec("beta")])
+    conn = connect(settings)
+    try:
+        upsert_rollups(
+            conn, [_roll("beta", 1, 1, 5)], computed_at=datetime(2025, 11, 1, tzinfo=UTC)
+        )
+        upsert_rollups(conn, [_roll("alpha", 2, 1, 50)], computed_at=jan(20, 3))
+    finally:
+        conn.close()
+    url = "https://alpha.example.com/x"
+    append_probes(
+        settings,
+        [
+            ("alpha", _probe(url, datetime(2025, 12, 5, 1, tzinfo=UTC), Outcome.responded, 200, 9)),
+            ("alpha", _probe(url, jan(15, 1), Outcome.responded, 500, 80)),
+        ],
+        now=jan(15, 1),
+    )
+    render_site(settings)
+    html = (tmp_path / "site" / "apis" / "alpha.html").read_text(encoding="utf-8")
+    assert _history_rows(html) == [["2026-01-15", "responded", "500", "80"]]
+
+
+def test_without_rollups_the_anchor_is_the_newest_of_several_last_seen_at(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, [_rec("beta")], seen_at=datetime(2025, 11, 1, tzinfo=UTC))
+    _seed(settings, [_rec("alpha")], seen_at=jan(20, 3))
+    url = "https://alpha.example.com"
+    append_probes(
+        settings,
+        [
+            ("alpha", _probe(url, datetime(2025, 12, 5, 1, tzinfo=UTC), Outcome.responded, 200, 9)),
+            ("alpha", _probe(url, jan(10, 1), Outcome.responded, 200, 7)),
+        ],
+        now=jan(10, 1),
+    )
+    render_site(settings)
+    html = (tmp_path / "site" / "apis" / "alpha.html").read_text(encoding="utf-8")
+    assert _history_rows(html) == [["2026-01-10", "responded", "200", "7"]]
+
+
 def test_without_rollups_the_anchor_is_the_newest_last_seen_at(tmp_path):
     settings = Settings(data_dir=tmp_path)
     _seed(settings, [_rec("alpha")], seen_at=jan(20, 3))

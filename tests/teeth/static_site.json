@@ -1,0 +1,136 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "cli render ignores --out-dir",
+      "file": "../../src/apipulse/cli.py",
+      "oracle": "real",
+      "find": "render_site(settings, out_dir=args.out_dir)",
+      "replace": "render_site(settings)"
+    },
+    {
+      "label": "api page renders name unescaped",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<h1>{{ d.name }}</h1>",
+      "replace": "<h1>{{ d.name | safe }}</h1>"
+    },
+    {
+      "label": "anchor is the wall clock",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "return max((datetime.fromisoformat(s) for s in stamps), default=None)",
+      "replace": "return datetime.now().astimezone() if stamps else None"
+    },
+    {
+      "label": "anchor ignores rollups.computed_at (always last_seen_at)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "stamps = [row[0] for row in conn.execute(\"SELECT computed_at FROM rollups\")]",
+      "replace": "stamps = []"
+    },
+    {
+      "label": "anchor is the OLDEST stamp, not the newest (rollups or last_seen_at)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "return max((datetime.fromisoformat(s) for s in stamps), default=None)",
+      "replace": "return min((datetime.fromisoformat(s) for s in stamps), default=None)"
+    },
+    {
+      "label": "opted-out APIs stay on the site",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "if is_safe_id(api.id) and api.id not in gone",
+      "replace": "if is_safe_id(api.id)"
+    },
+    {
+      "label": "stale badges are not pruned",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    _prune(badge_dir, \".svg\", {f\"{api.id}.svg\" for api, _ in apis})\n",
+      "replace": ""
+    },
+    {
+      "label": "stale api pages are not pruned",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    _prune(pages_dir, \".html\", {f\"{api.id}.html\" for api, _ in apis})\n",
+      "replace": ""
+    },
+    {
+      "label": "hidden (dot-leading) ids allowed",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": " and not api_id.startswith(\".\")",
+      "replace": ""
+    },
+    {
+      "label": "removed list ordered newest-first instead of by key",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "SELECT * FROM optouts ORDER BY key",
+      "replace": "SELECT * FROM optouts ORDER BY recorded_at DESC, key DESC"
+    },
+    {
+      "label": "client builds cells with innerHTML",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "    td.textContent = text;",
+      "replace": "    td.innerHTML = text;"
+    },
+    {
+      "label": "any URL scheme becomes a link",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    return value.lower().startswith((\"http://\", \"https://\"))",
+      "replace": "    return True"
+    },
+    {
+      "label": "inactive rows not muted in server-rendered index",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "<tr{% if not row.active %} class=\"inactive\"{% endif %}>",
+      "replace": "<tr>"
+    },
+    {
+      "label": "index/apis.json ordered by id only",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "key=search_order_key",
+      "replace": "key=lambda h: h.id"
+    },
+    {
+      "label": "embedded JSON not script-escaped",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "apis_json=Markup(_script_safe(apis_json))",
+      "replace": "apis_json=Markup(apis_json)"
+    },
+    {
+      "label": "[control] prune pages and badges in the other order",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "expect": "survived",
+      "why": "The two _prune calls touch disjoint directories (apis/ vs badge/), read only their own directory listing and the precomputed keep-set, and run after every write; neither observes the other's deletions. Inert on every path, including a crash between them (each leaves the other directory as it was).",
+      "find": "    _prune(pages_dir, \".html\", {f\"{api.id}.html\" for api, _ in apis})\n    _prune(badge_dir, \".svg\", {f\"{api.id}.svg\" for api, _ in apis})",
+      "replace": "    _prune(badge_dir, \".svg\", {f\"{api.id}.svg\" for api, _ in apis})\n    _prune(pages_dir, \".html\", {f\"{api.id}.html\" for api, _ in apis})"
+    }
+  ]
+}
