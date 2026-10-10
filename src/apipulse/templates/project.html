@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}About apipulse{% endblock %}
+{% block body %}
+<h1 id="project-page">About apipulse</h1>
+<p>apipulse is a live-probe quality index for public APIs. Once a day it checks one
+representative endpoint of each listed API and publishes reachability, latency, auth and
+rate-limit signals, so you can see which public APIs actually work today.</p>
+
+<h2>What a probe sends</h2>
+<ul>
+<li>Method: <code>GET</code>.</li>
+<li>Frequency: one request per API per day.</li>
+<li>User-Agent: <code>{{ user_agent }}</code></li>
+<li>Credentials: none. A probe is sent with no credentials, meaning no API keys, cookies or
+Authorization headers.</li>
+<li>Body: none. The request has no body.</li>
+</ul>
+
+<h2>How to opt out</h2>
+<p>If you run one of these APIs and do not want it probed, open an issue at
+<a href="https://github.com/cdcoonce/apipulse/issues">https://github.com/cdcoonce/apipulse/issues</a>
+titled <code>opt-out: &lt;host&gt;</code>, where <code>&lt;host&gt;</code> is the host name to
+exclude. The maintainer adds the host to <code>data/optout.json</code>; the API stops being probed
+and is listed on the <a href="removed.html">removed page</a> so its absence is not read as death.</p>
+
+<h2>JSON API</h2>
+<ul>
+<li><code>/v1/apis?q=</code> searches the index by name, description and tags and returns summaries
+ranked by relevance, then reachability, working days and median latency.</li>
+<li><code>/v1/apis/{id}</code> returns everything known about one API, including its 30-day
+history, auth and rate-limit signals.</li>
+</ul>
+<p>Every API also has a badge at <code>badge/&lt;id&gt;.svg</code> and a machine-readable
+list in <a href="apis.json">apis.json</a>.</p>
+{% endblock %}

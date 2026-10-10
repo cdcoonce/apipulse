@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ d.id }} - apipulse{% endblock %}
+{% block body %}
+{% macro show(value) %}{{ value if value is not none else "—" }}{% endmacro %}
+{% macro link(url) %}{% if url is none %}—{% elif is_http_url(url) %}<a href="{{ url }}" rel="nofollow noopener">{{ url }}</a>{% else %}{{ url }}{% endif %}{% endmacro %}
+<h1>{{ d.name }}</h1>
+<dl>
+<dt>id</dt><dd>{{ d.id }}</dd>
+<dt>status</dt><dd id="status">{{ "active" if d.active else "inactive" }}</dd>
+<dt>description</dt><dd>{{ d.description }}</dd>
+<dt>tags</dt><dd>{{ d.tags | join(", ") }}</dd>
+<dt>base url</dt><dd>{{ link(d.base_url) }}</dd>
+<dt>spec url</dt><dd>{{ link(d.spec_url) }}</dd>
+<dt>probe target</dt><dd>{{ link(d.probe_target) }}</dd>
+<dt>reachable (30 days)</dt><dd>{{ d.reachable_30d }}</dd>
+<dt>working (30 days)</dt><dd>{{ d.working_30d }}</dd>
+<dt>days observed (30 days)</dt><dd>{{ d.days_observed_30d }}</dd>
+<dt>latency p50 (ms)</dt><dd>{{ show(d.latency.p50_ms) }}</dd>
+<dt>latency p95 (ms)</dt><dd>{{ show(d.latency.p95_ms) }}</dd>
+<dt>last probe</dt>
+<dd>{% if d.last_probe %}{{ d.last_probe.at }}, outcome {{ show(d.last_probe.outcome) }}, status {{ show(d.last_probe.status) }}{% else %}—{% endif %}</dd>
+</dl>
+<h2>Auth</h2>
+<dl>
+<dt>classified</dt><dd>{{ d.auth.classified }}</dd>
+<dt>declared</dt><dd>{{ show(d.auth.declared) }}</dd>
+<dt>signup url</dt><dd>{{ link(d.auth.signup_url) }}</dd>
+</dl>
+<h2>Rate limit</h2>
+<dl>
+<dt>headers seen</dt><dd>{{ d.ratelimit.headers_seen | join(", ") if d.ratelimit.headers_seen else "—" }}</dd>
+<dt>saw 429 (30 days)</dt><dd>{{ "yes" if d.ratelimit.saw_429_30d else "no" }}</dd>
+</dl>
+<h2>History (30 days)</h2>
+{% if d.history %}
+<table id="history">
+<thead><tr><th>date</th><th>outcome</th><th>status</th><th>elapsed ms</th></tr></thead>
+<tbody>
+{% for h in d.history %}
+<tr><td>{{ h.date }}</td><td>{{ h.outcome }}</td><td>{{ show(h.status) }}</td><td>{{ show(h.elapsed_ms) }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p>no probes recorded in the last 30 days</p>
+{% endif %}
+{% endblock %}

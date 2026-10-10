@@ -35,7 +35,7 @@ def test_render_site_writes_a_badge_per_api_including_inactive(tmp_path):
     summary = render_site(settings)
     files = sorted((tmp_path / "site" / "badge").glob("*.svg"))
     assert [f.name for f in files] == ["a.svg", "b.svg", "c.svg"]
-    assert (summary.badges, summary.pages, summary.removed) == (3, 0, 0)
+    assert (summary.badges, summary.pages, summary.removed) == (3, 3, 0)
     assert "no data" in (tmp_path / "site/badge/c.svg").read_text()
     assert "reachable 30/30" in (tmp_path / "site/badge/a.svg").read_text()
     assert "reachable 5/30" in (tmp_path / "site/badge/b.svg").read_text()
