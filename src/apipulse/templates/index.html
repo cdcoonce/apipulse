@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}apipulse{% endblock %}
+{% block body %}
+<h1>apipulse</h1>
+<p>A live-probe quality index for public APIs. <a href="project.html">What is probed and how to opt out</a>.</p>
+<input type="search" id="q" placeholder="Search name, description and tags" aria-label="Search APIs" autocomplete="off">
+<table id="apis">
+<thead>
+<tr><th>id</th><th>name</th><th>reachable 30d</th><th>working 30d</th><th>p50 ms</th><th>auth</th><th>last probe</th></tr>
+</thead>
+<tbody id="rows">
+{% for row in rows %}
+<tr{% if not row.active %} class="inactive"{% endif %}>
+<td><a href="apis/{{ row.id }}.html">{{ row.id }}</a></td>
+<td>{{ row.name }}</td>
+<td>{{ row.reachable_30d }}</td>
+<td>{{ row.working_30d }}</td>
+<td>{{ row.p50_ms if row.p50_ms is not none else "—" }}</td>
+<td>{{ row.auth }}</td>
+<td>{{ row.last_probe_at[:10] if row.last_probe_at else "—" }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+<p id="empty" hidden>No APIs match.</p>
+<script type="application/json" id="apis-data">{{ apis_json }}</script>
+<script>
+// BEGIN rankApis
+function rankApis(apis, query) {
+  var tokens = query.split(/\s+/).filter(Boolean).map(function (t) { return t.toLowerCase(); });
+  var scored = [];
+  apis.forEach(function (api) {
+    var columns = [
+      (api.name || "").toLowerCase(),
+      (api.description || "").toLowerCase(),
+      (api.tags || []).join(" ").toLowerCase()
+    ];
+    var relevance = 0;
+    var matched = tokens.every(function (token) {
+      var count = columns.filter(function (column) { return column.indexOf(token) !== -1; }).length;
+      relevance += count;
+      return count > 0;
+    });
+    if (matched) { scored.push({ api: api, relevance: relevance }); }
+  });
+  scored.sort(function (a, b) {
+    if (a.relevance !== b.relevance) { return b.relevance - a.relevance; }
+    if ((a.api.reachable_30d || 0) !== (b.api.reachable_30d || 0)) {
+      return (b.api.reachable_30d || 0) - (a.api.reachable_30d || 0);
+    }
+    if ((a.api.working_30d || 0) !== (b.api.working_30d || 0)) {
+      return (b.api.working_30d || 0) - (a.api.working_30d || 0);
+    }
+    var aNull = a.api.p50_ms === null || a.api.p50_ms === undefined;
+    var bNull = b.api.p50_ms === null || b.api.p50_ms === undefined;
+    if (aNull !== bNull) { return aNull ? 1 : -1; }
+    if (!aNull && a.api.p50_ms !== b.api.p50_ms) { return a.api.p50_ms - b.api.p50_ms; }
+    if (a.api.id === b.api.id) { return 0; }
+    return a.api.id < b.api.id ? -1 : 1;
+  });
+  return scored.map(function (entry) { return entry.api; });
+}
+// END rankApis
+
+function buildRow(api) {
+  var tr = document.createElement("tr");
+  if (!api.active) { tr.className = "inactive"; }
+  var link = document.createElement("a");
+  link.href = "apis/" + encodeURIComponent(api.id) + ".html";
+  link.textContent = api.id;
+  var first = document.createElement("td");
+  first.appendChild(link);
+  tr.appendChild(first);
+  var cells = [
+    api.name,
+    String(api.reachable_30d),
+    String(api.working_30d),
+    api.p50_ms === null ? "—" : String(api.p50_ms),
+    api.auth,
+    api.last_probe_at ? api.last_probe_at.slice(0, 10) : "—"
+  ];
+  cells.forEach(function (text) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+  });
+  return tr;
+}
+
+(function () {
+  var apis = JSON.parse(document.getElementById("apis-data").textContent);
+  var input = document.getElementById("q");
+  var body = document.getElementById("rows");
+  var empty = document.getElementById("empty");
+  input.addEventListener("input", function () {
+    var matches = rankApis(apis, input.value);
+    while (body.firstChild) { body.removeChild(body.firstChild); }
+    matches.forEach(function (api) { body.appendChild(buildRow(api)); });
+    empty.hidden = matches.length > 0;
+  });
+})();
+</script>
+{% endblock %}

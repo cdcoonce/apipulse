@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Removed - apipulse{% endblock %}
+{% block body %}
+<h1>APIs removed at the maintainer's request</h1>
+<p>Absence from the index is not a sign of death.</p>
+<ul id="removed">
+{% for item in removed %}
+<li>{{ item.key }} - {{ item.date }}</li>
+{% endfor %}
+</ul>
+{% if not removed %}
+<p>No APIs have been removed at the maintainer's request.</p>
+{% endif %}
+{% endblock %}

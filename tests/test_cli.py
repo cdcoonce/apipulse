@@ -7,7 +7,14 @@ import httpx
 import pytest
 
 from apipulse.cli import main
+from apipulse.config import Settings
+from apipulse.inventory import ApiRecord
 from apipulse.prober import Outcome, ProbeResult
+from apipulse.store import append_probes, connect, upsert_apis
+
+
+def _api(id: str) -> ApiRecord:
+    return ApiRecord(id, id, "", (), f"https://{id}.example.com", None, None, None, "seed")
 
 
 def test_version_flag_prints_version_and_exits_zero(capsys):
@@ -150,3 +157,25 @@ def test_probe_runs_against_inventory_and_prints_summary(tmp_path, capsys, monke
         r" rollups: 2, keyless: 0, key-required: 0$",
         lines[0],
     )
+
+
+def test_render_after_a_probe_writes_the_full_site(tmp_path, capsys):
+    settings = Settings(data_dir=tmp_path)
+    conn = connect(settings)
+    try:
+        upsert_apis(conn, [_api("alpha"), _api("beta")], seen_at=datetime(2026, 10, 10, tzinfo=UTC))
+    finally:
+        conn.close()
+    result = ProbeResult(
+        "https://alpha.example.com", datetime(2026, 10, 10, tzinfo=UTC), Outcome.responded,
+        200, 12, True, None, {}, None,
+    )  # fmt: skip
+    append_probes(settings, [("alpha", result)], now=datetime(2026, 10, 10, tzinfo=UTC))
+    assert main(["render", "--data-dir", str(tmp_path)]) == 0
+    assert capsys.readouterr().out.strip() == (
+        f"render: 2 api pages, 0 removed, badges: 2 -> {tmp_path}/site"
+    )
+    site = tmp_path / "site"
+    for name in ("index.html", "project.html", "removed.html", "apis.json"):
+        assert (site / name).is_file(), name
+    assert sorted(p.name for p in (site / "apis").iterdir()) == ["alpha.html", "beta.html"]

@@ -1,34 +1,37 @@
 # Field names in the /v1 payloads are a public contract.
 # Any rename or removal requires a new path prefix (/v2).
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Query
 
 from apipulse.config import Settings
-from apipulse.rollup import WINDOW_DAYS, empty_rollup
-from apipulse.store import connect, load_api, load_rollup, read_probes, search_apis
+from apipulse.inventory import ApiRecord
+from apipulse.rollup import WINDOW_DAYS, Rollup, empty_rollup
+from apipulse.store import (
+    ProbeRow,
+    SearchHit,
+    connect,
+    load_api,
+    load_rollup,
+    read_probes,
+    search_apis,
+)
 
 
-def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None) -> dict | None:
-    moment = now or datetime.now(UTC)
-    conn = connect(settings)
-    try:
-        found = load_api(conn, api_id)
-        rollup = load_rollup(conn, api_id) or empty_rollup(api_id)
-    finally:
-        conn.close()
-    if found is None:
-        return None
-    record, active = found
+def detail_payload(
+    record: ApiRecord, active: bool, rollup: Rollup, probes: Iterable[ProbeRow]
+) -> dict:
+    """Build the /v1/apis/{id} payload from already-loaded data; performs no I/O."""
     latest_per_day: dict[str, dict] = {}
-    for row in read_probes(settings, since=moment - timedelta(days=WINDOW_DAYS)):
-        if row.api_id == api_id:
-            latest_per_day[row.probed_at.astimezone(UTC).date().isoformat()] = {
-                "date": row.probed_at.astimezone(UTC).date().isoformat(),
-                "outcome": row.outcome,
-                "status": row.status,
-                "elapsed_ms": row.elapsed_ms,
-            }
+    for row in probes:
+        day = row.probed_at.astimezone(UTC).date().isoformat()
+        latest_per_day[day] = {
+            "date": day,
+            "outcome": row.outcome,
+            "status": row.status,
+            "elapsed_ms": row.elapsed_ms,
+        }
     history = [latest_per_day[d] for d in sorted(latest_per_day, reverse=True)]
     last_probe = None
     if rollup.last_probe_at is not None:
@@ -64,6 +67,43 @@ def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None
     }
 
 
+def search_summary(hit: SearchHit) -> dict:
+    """The /v1/apis result shape, shared with the static site's apis.json."""
+    return {
+        "id": hit.id,
+        "name": hit.name,
+        "reachable_30d": hit.reachable_30d,
+        "working_30d": hit.working_30d,
+        "p50_ms": hit.p50_ms,
+        "last_probe_at": (
+            hit.last_probe_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+            if hit.last_probe_at
+            else None
+        ),
+        "active": hit.active,
+        "auth": hit.auth,
+    }
+
+
+def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None) -> dict | None:
+    moment = now or datetime.now(UTC)
+    conn = connect(settings)
+    try:
+        found = load_api(conn, api_id)
+        rollup = load_rollup(conn, api_id) or empty_rollup(api_id)
+    finally:
+        conn.close()
+    if found is None:
+        return None
+    record, active = found
+    probes = [
+        row
+        for row in read_probes(settings, since=moment - timedelta(days=WINDOW_DAYS))
+        if row.api_id == api_id
+    ]
+    return detail_payload(record, active, rollup, probes)
+
+
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI()
 
@@ -80,23 +120,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {
             "query": query,
             "count": len(hits),
-            "results": [
-                {
-                    "id": h.id,
-                    "name": h.name,
-                    "reachable_30d": h.reachable_30d,
-                    "working_30d": h.working_30d,
-                    "p50_ms": h.p50_ms,
-                    "last_probe_at": (
-                        h.last_probe_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                        if h.last_probe_at
-                        else None
-                    ),
-                    "active": h.active,
-                    "auth": h.auth,
-                }
-                for h in hits
-            ],
+            "results": [search_summary(h) for h in hits],
         }
 
     @app.get("/v1/apis/{api_id}")

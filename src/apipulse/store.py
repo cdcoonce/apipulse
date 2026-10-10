@@ -228,6 +228,18 @@ _PLAIN_SEARCH = (
 )
 
 
+def search_order_key(hit: SearchHit) -> tuple:
+    """Plain-search ordering: relevance, then reachable, working, p50 (nulls last), id."""
+    return (
+        -hit.relevance,
+        -hit.reachable_30d,
+        -hit.working_30d,
+        hit.p50_ms is None,
+        hit.p50_ms or 0,
+        hit.id,
+    )
+
+
 def _search_plain(conn: sqlite3.Connection, tokens: list[str], limit: int) -> list[SearchHit]:
     scored: list[SearchHit] = []
     for row in conn.execute(_PLAIN_SEARCH):
@@ -239,16 +251,7 @@ def _search_plain(conn: sqlite3.Connection, tokens: list[str], limit: int) -> li
         counts = [sum(1 for c in columns if t in c) for t in tokens]
         if all(counts):
             scored.append(_hit(row, float(sum(counts))))
-    scored.sort(
-        key=lambda h: (
-            -h.relevance,
-            -h.reachable_30d,
-            -h.working_30d,
-            h.p50_ms is None,
-            h.p50_ms or 0,
-            h.id,
-        )
-    )
+    scored.sort(key=search_order_key)
     return scored[:limit]
 
 
@@ -266,25 +269,39 @@ def search_apis(
     return [_hit(row, -row["rank"]) for row in conn.execute(_FTS_SEARCH, (match, limit))]
 
 
+def _api_record(row: sqlite3.Row) -> ApiRecord:
+    return ApiRecord(
+        id=row["id"],
+        name=row["name"],
+        description=row["description"],
+        tags=tuple(json.loads(row["tags"])),
+        base_url=row["base_url"],
+        spec_url=row["spec_url"],
+        declared_auth=row["declared_auth"],
+        signup_url=row["signup_url"],
+        source=row["source"],
+    )
+
+
+def load_apis_with_state(conn: sqlite3.Connection) -> list[tuple[ApiRecord, bool]]:
+    """Every API ordered by id, paired with its active flag."""
+    rows = conn.execute("SELECT * FROM apis ORDER BY id")
+    return [(_api_record(row), bool(row["active"])) for row in rows]
+
+
 def load_apis(conn: sqlite3.Connection, *, active_only: bool = True) -> list[ApiRecord]:
-    query = "SELECT * FROM apis"
-    if active_only:
-        query += " WHERE active = 1"
-    query += " ORDER BY id"
-    return [
-        ApiRecord(
-            id=row["id"],
-            name=row["name"],
-            description=row["description"],
-            tags=tuple(json.loads(row["tags"])),
-            base_url=row["base_url"],
-            spec_url=row["spec_url"],
-            declared_auth=row["declared_auth"],
-            signup_url=row["signup_url"],
-            source=row["source"],
-        )
-        for row in conn.execute(query)
-    ]
+    return [record for record, active in load_apis_with_state(conn) if active or not active_only]
+
+
+def data_anchor(conn: sqlite3.Connection) -> datetime | None:
+    """A moment derived from the stored data, never the wall clock.
+
+    The newest rollup computation time, or the newest inventory sighting when no rollup exists.
+    """
+    stamps = [row[0] for row in conn.execute("SELECT computed_at FROM rollups")]
+    if not stamps:
+        stamps = [row[0] for row in conn.execute("SELECT last_seen_at FROM apis")]
+    return max((datetime.fromisoformat(s) for s in stamps), default=None)
 
 
 def load_probe_targets(conn: sqlite3.Connection) -> dict[str, tuple[str, datetime]]:
@@ -316,6 +333,14 @@ def record_optouts(
         [(r.id, _iso(recorded_at)) for r in removed],
     )
     conn.commit()
+
+
+def load_optouts(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """Every recorded opt-out as (key, recorded_at)."""
+    return [
+        (row["key"], row["recorded_at"])
+        for row in conn.execute("SELECT * FROM optouts ORDER BY key")
+    ]
 
 
 _ROLLUP_COLUMNS = (
