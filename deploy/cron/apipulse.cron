@@ -1,6 +1,7 @@
-# apipulse on rammingspeed (Ubuntu 24.04). Install by APPENDING to the crontab, never by
-# replacing it (see deploy/README.md):
-#   (crontab -l 2>/dev/null; cat deploy/cron/apipulse.cron) | crontab -
+# apipulse on rammingspeed (Ubuntu 24.04). Install by APPENDING the two job lines to the
+# crontab, never by replacing it, and without these comments (see deploy/README.md):
+#   (crontab -l 2>/dev/null; grep -v '^#' deploy/cron/apipulse.cron | grep .) | crontab -
+# Every job line contains /src/apipulse, which is how the runbook finds and removes them.
 #
 # Why 00:30 and 01:00 rather than 03:00 and 03:30: the box has unattended-upgrades set to
 # reboot automatically at 04:30 local. Probing is sequential (10 s timeout per request,
@@ -12,7 +13,8 @@
 # SQLite at the same time, call uv by absolute path (cron's PATH is minimal), and append
 # stdout and stderr to a per-job log. The probe line runs render only if probe succeeded.
 # Each line first writes a timestamp (date -Is) to its log, and a failure or a flock timeout
-# appends an "apipulse <job> failed: exit N" line, so a bad night is visible in the log.
+# appends an "apipulse <job> failed: exit N" line (probe+render for the
+# probe line), so a bad night is visible in the log.
 # No percent signs anywhere in this file: cron treats an unescaped one as a newline.
 # The state dir must exist first: mkdir -p /home/cdcoonce/.local/state/apipulse
 
@@ -20,4 +22,4 @@
 30 0 * * 0 date -Is >> /home/cdcoonce/.local/state/apipulse/refresh.log; APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse refresh-inventory' >> /home/cdcoonce/.local/state/apipulse/refresh.log 2>&1 || echo "apipulse refresh failed: exit $?" >> /home/cdcoonce/.local/state/apipulse/refresh.log
 
 # Daily probe then render, 01:00.
-0 1 * * * date -Is >> /home/cdcoonce/.local/state/apipulse/probe.log; APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse probe && /home/cdcoonce/.local/bin/uv run --frozen apipulse render' >> /home/cdcoonce/.local/state/apipulse/probe.log 2>&1 || echo "apipulse probe failed: exit $?" >> /home/cdcoonce/.local/state/apipulse/probe.log
+0 1 * * * date -Is >> /home/cdcoonce/.local/state/apipulse/probe.log; APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse probe && /home/cdcoonce/.local/bin/uv run --frozen apipulse render' >> /home/cdcoonce/.local/state/apipulse/probe.log 2>&1 || echo "apipulse probe+render failed: exit $?" >> /home/cdcoonce/.local/state/apipulse/probe.log

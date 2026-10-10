@@ -82,7 +82,8 @@ def _make_data_dir(data_dir: Path, *, probe_rows: int = 3, rollups: int = 2) -> 
         conn.close()
     parquet = append_probes(settings, [("api0", _result())] * probe_rows, now=NOW)
     (data_dir / "site").mkdir()
-    (data_dir / "site" / "index.html").write_text("<html></html>")
+    for name in ("index.html", "removed.html", "project.html"):
+        (data_dir / "site" / name).write_text("<html></html>")
     return parquet
 
 
@@ -253,7 +254,10 @@ def test_cron_lines_leave_a_timestamped_trace_and_log_a_failure_in_their_own_log
     for job, (_, command) in _cron_entries().items():
         log = f"{state}/{job}.log"
         assert command.startswith(f"date -Is >> {log}; APIPULSE_DATA_DIR="), job
-        assert command.rstrip().endswith(f'|| echo "apipulse {job} failed: exit $?" >> {log}'), job
+        label = "probe+render" if job == "probe" else "refresh"
+        assert command.rstrip().endswith(f'|| echo "apipulse {label} failed: exit $?" >> {log}'), (
+            job
+        )
 
 
 def test_cron_file_has_no_percent_signs_and_explains_the_early_schedule():
@@ -496,16 +500,11 @@ def test_runbook_first_run_is_backgrounded_under_the_cron_lock_and_gates_the_sch
     assert "flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock" in text
     assert "more than 3 hours" in text
     assert "Charles" in text
-    assert text.index("first-probe.log") < text.index("(crontab -l 2>/dev/null; cat")
+    assert text.index("first-probe.log") < text.index("(crontab -l 2>/dev/null; grep -v")
 
 
-def test_runbook_cron_install_is_guarded_against_duplicates():
-    text = _runbook()
-    assert (
-        "crontab -l 2>/dev/null | grep -q 'apipulse' && echo 'apipulse already in crontab; "
-        "not appending' || (crontab -l 2>/dev/null; cat deploy/cron/apipulse.cron) | crontab -"
-    ) in text
-    assert "double-probe" in text
+def test_runbook_explains_why_duplicate_cron_lines_are_guarded():
+    assert "double-probe" in _runbook()
 
 
 def test_runbook_enables_linger_before_the_service_and_waits_before_curl():
@@ -525,14 +524,13 @@ def test_runbook_verify_passes_the_data_dir_and_documents_every_exit_code():
     assert "RENDER STALE" in text
     assert "under about 10 hours" in text
     assert "ls -l ~/.local/state/apipulse/" in text
-    assert 'grep -n "$(date +%F)" ~/.local/state/apipulse/probe.log' in text
     assert "refresh.log" in text
 
 
 def test_runbook_rollback_changes_code_only_and_checks_the_optout_list_first():
     text = _runbook()
     section = text[text.index("## 7.") :]
-    assert "git -C ~/src/apipulse diff deploy-" in section
+    assert "git diff --quiet deploy-" in section
     assert "data/optout.json" in section
     assert "fix forward" in section
     assert "systemctl --user restart apipulse-serve" in section
@@ -551,3 +549,179 @@ def test_runbook_explains_that_errors_counts_exceptions_not_transport_failures()
     text = _runbook()
     assert "exceptions inside apipulse" in text
     assert "transport failures" in text
+
+
+def test_verify_run_exits_three_when_the_last_page_written_is_stale_under_a_fresh_index(tmp_path):
+    # render writes index.html first and project.html last: a crash in between leaves a fresh
+    # index over stale pages.
+    _make_data_dir(tmp_path)
+    _age(tmp_path / "site" / "project.html", 2)
+    result = _verify(tmp_path)
+    assert result.returncode == 3
+    assert "RENDER STALE: site/project.html is older than the latest probe" in result.stderr
+
+
+def test_verify_run_exits_three_on_a_partial_render_with_no_project_page(tmp_path):
+    _make_data_dir(tmp_path)
+    (tmp_path / "site" / "project.html").unlink()
+    result = _verify(tmp_path)
+    assert result.returncode == 3
+    assert "RENDER STALE: site/project.html is missing" in result.stderr
+
+
+def test_verify_run_exits_zero_when_the_whole_site_directory_is_missing(tmp_path):
+    _make_data_dir(tmp_path)
+    shutil.rmtree(tmp_path / "site")
+    result = _verify(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "site/index.html: missing" in result.stdout
+
+
+def test_cron_installs_only_job_lines_each_naming_the_clone():
+    # deploy/README.md installs `grep -v '^#' deploy/cron/apipulse.cron | grep .` and guards
+    # and removes by the clone path, so every installed line must carry it.
+    installed = [
+        line for line in CRON.read_text().splitlines() if not line.startswith("#") and line.strip()
+    ]
+    assert len(installed) == 2
+    assert all("/src/apipulse" in line for line in installed)
+    assert not any(line.lstrip().startswith("#") for line in installed)
+
+
+def _section(text: str, start: str, end: str | None = None) -> str:
+    i = text.index(start)
+    return text[i : text.index(end, i + 1)] if end else text[i:]
+
+
+def test_runbook_says_the_plists_mirror_only_the_schedule_and_data_dir():
+    text = _runbook()
+    assert "mirror the schedule and data dir but NOT the lock" in text
+    assert "timestamps or failure echo" in text
+
+
+def test_runbook_states_the_true_count_relations_and_no_false_equalities():
+    text = _runbook()
+    assert "should equal" not in text
+    assert "active + deactivated" in text
+    assert "minus opted-out" in text
+    assert "1 removed (opt-out), 1 deactivated" in text
+    assert "never deleted" in text
+    assert "at least the active count" in text
+
+
+def test_runbook_opt_out_runs_inside_the_cron_lock_on_a_branch_and_restarts_serve():
+    section = _section(_runbook(), "## 6.", "## 7.")
+    assert "git -C ~/src/apipulse symbolic-ref -q HEAD || echo 'detached: roll forward first" in (
+        section
+    )
+    assert section.index("git tag") < section.index("git pull --ff-only")
+    locked = section[section.index("flock -w 3600 ~/.local/state/apipulse/run.lock") :]
+    for needle in (
+        "git pull --ff-only",
+        "uv sync --frozen",
+        "apipulse refresh-inventory",
+        "apipulse render",
+        "APIPULSE_DATA_DIR=",
+    ):
+        assert needle in locked.split("```")[0], needle
+    assert "systemctl --user restart apipulse-serve" in section
+
+
+def test_runbook_roll_forward_and_rollback_are_complete_blocks_that_run_under_the_lock():
+    section = _section(_runbook(), "## 7.")
+    assert "git checkout main && git pull --ff-only && uv sync --frozen" in section
+    assert 'git tag "deploy-$(date +%F)-2"' in section
+    assert "git log --oneline -1 deploy-" in section
+    assert "git diff --quiet deploy-" in section
+    assert "optout.json differs: inspect with git diff" in section
+    checkout_block = next(
+        block for block in section.split("```") if "git -C ~/src/apipulse checkout deploy-" in block
+    )
+    assert "flock -w 3600 ~/.local/state/apipulse/run.lock" in checkout_block
+    assert "systemctl --user restart apipulse-serve" in section
+
+
+def test_runbook_first_run_guards_against_a_second_launch_and_explains_failures():
+    text = _runbook()
+    first = _section(text, "## 3.", "## 4.")
+    assert (
+        "pgrep -fa 'apipulse (probe|render|refresh-inventory)' && echo 'already running; "
+        "do not start another'"
+    ) in first
+    assert "nohup: ignoring input" in first
+    assert "If the first run failed" in first
+    assert "traceback" in first.lower()
+    assert "re-run" in first.lower() and "only when" in first.lower()
+    assert "seed source alone is not a deploy" in first
+    assert "no Parquet" in first
+
+
+def test_runbook_failure_grep_finds_only_todays_failures(tmp_path):
+    text = _runbook()
+    line = next(line for line in text.splitlines() if line.startswith("awk -v d="))
+    state = tmp_path / ".local" / "state" / "apipulse"
+    state.mkdir(parents=True)
+    log = state / "probe.log"
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def run() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", "-c", line],
+            env={**os.environ, "HOME": str(tmp_path)},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    log.write_text(
+        f"{yesterday}T01:00:00+00:00\napipulse probe+render failed: exit 1\n"
+        f"{today}T01:00:00+00:00\nprobe: 3 probed\nrender: 3 api pages\n"
+    )
+    clean = run()
+    assert clean.returncode == 1 and clean.stdout == ""  # grep's "no match": nothing failed today
+    log.write_text(
+        f"{yesterday}T01:00:00+00:00\n{today}T01:00:00+00:00\ntraceback ...\n"
+        "apipulse probe+render failed: exit 1\n"
+    )
+    failed = run()
+    assert "apipulse probe+render failed: exit 1" in failed.stdout
+
+
+def test_runbook_verify_section_covers_first_run_site_line_and_missing_refresh_log():
+    section = _section(_runbook(), "## 5.", "## 6.")
+    assert "does not exist until" in section
+    assert "no output means" in section.lower()
+    first = _section(_runbook(), "### Verify the first run", "## 4.")
+    assert "site/index.html:" in first and "missing" in first
+    assert "project.html" in first
+    assert "partial render" in first
+
+
+def test_runbook_preflight_decisions_are_recorded_on_the_pull_request():
+    section = _section(_runbook(), "## 1.", "## 2.")
+    assert "comment on the #15 pull request" in section
+    assert "stop" in section.lower()
+
+
+def test_runbook_does_not_install_the_unit_without_linger():
+    section = _section(_runbook(), "### Serve", "## 5.")
+    assert "do NOT install the unit" in section
+
+
+def test_runbook_install_notes_say_which_steps_are_safe_to_repeat():
+    section = _section(_runbook(), "## 2.", "### Data directory")
+    assert "git clone" in section
+    assert "fails harmlessly" in section
+    assert "-2" in section
+    assert "public" in section and "no credentials" in section
+
+
+def test_runbook_crontab_install_and_removal_use_the_clone_path_filter():
+    text = _runbook()
+    assert (
+        "crontab -l 2>/dev/null | grep -q '/src/apipulse' && echo 'apipulse already in "
+        "crontab; not appending' || (crontab -l 2>/dev/null; grep -v '^#' "
+        "deploy/cron/apipulse.cron | grep .) | crontab -"
+    ) in text
+    assert "crontab -l | grep -v '/src/apipulse' | crontab -" in text
