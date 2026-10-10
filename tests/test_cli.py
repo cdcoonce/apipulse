@@ -1,6 +1,10 @@
+import json
+from datetime import UTC, datetime
+
 import pytest
 
 from apipulse.cli import main
+from apipulse.prober import Outcome, ProbeResult
 
 
 def test_version_flag_prints_version_and_exits_zero(capsys):
@@ -40,3 +44,20 @@ def test_env_data_dir_reaches_handler(capsys, monkeypatch):
     monkeypatch.setenv("APIPULSE_DATA_DIR", "/tmp/e")
     assert main(["probe"]) == 0
     assert "data_dir: /tmp/e" in capsys.readouterr().out.splitlines()
+
+
+def test_probe_one_prints_json_and_returns_zero(capsys, monkeypatch):
+    fake = ProbeResult(
+        url="https://example.invalid",
+        probed_at=datetime(2026, 10, 10, tzinfo=UTC),
+        outcome=Outcome.dns_failure,
+        status=None,
+        elapsed_ms=None,
+        tls_ok=None,
+        final_url=None,
+        ratelimit_headers={},
+        error="no such host",
+    )
+    monkeypatch.setattr("apipulse.cli.probe", lambda url, **kwargs: fake)
+    assert main(["probe-one", "https://example.invalid"]) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "dns_failure"
