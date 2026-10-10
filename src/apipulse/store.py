@@ -215,7 +215,7 @@ _FTS_SEARCH = (
     " r.last_probe_at, r.auth, bm25(apis_fts) AS rank"
     " FROM apis_fts JOIN apis a ON a.id = apis_fts.id"
     " LEFT JOIN rollups r ON r.api_id = a.id"
-    " WHERE apis_fts MATCH ?"
+    " WHERE apis_fts MATCH ? AND a.id NOT IN (SELECT key FROM optouts)"
     " ORDER BY rank ASC, COALESCE(r.reachable_30d, 0) DESC,"
     " COALESCE(r.working_30d, 0) DESC, (r.p50_ms IS NULL) ASC, r.p50_ms ASC, a.id ASC"
     " LIMIT ?"
@@ -225,6 +225,7 @@ _FTS_SEARCH = (
 _PLAIN_SEARCH = (
     "SELECT a.id, a.name, a.description, a.tags, a.active, r.reachable_30d, r.working_30d,"
     " r.p50_ms, r.last_probe_at, r.auth FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
+    " WHERE a.id NOT IN (SELECT key FROM optouts)"
 )
 
 
@@ -333,6 +334,10 @@ def record_optouts(
         [(r.id, _iso(recorded_at)) for r in removed],
     )
     conn.commit()
+
+
+def is_opted_out(conn: sqlite3.Connection, api_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM optouts WHERE key = ?", (api_id,)).fetchone() is not None
 
 
 def load_optouts(conn: sqlite3.Connection) -> list[tuple[str, str]]:
