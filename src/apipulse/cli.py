@@ -5,6 +5,7 @@ from apipulse import __version__
 from apipulse.commands import refresh_inventory
 from apipulse.config import Settings, resolve_settings
 from apipulse.prober import probe, to_json
+from apipulse.render import format_render_summary, render_site
 from apipulse.runner import format_summary, run_probes
 
 COMMANDS = ("refresh-inventory", "probe", "render", "serve")
@@ -27,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
         command_parser.add_argument("--data-dir", type=Path, default=None)
         if name == "refresh-inventory":
             command_parser.add_argument("--source", default="seed,apis.guru,public-apis")
+        if name == "render":
+            command_parser.add_argument("--out-dir", type=Path, default=None)
         if name == "serve":
             command_parser.add_argument("--host", default="127.0.0.1")
             command_parser.add_argument("--port", type=int, default=8080)
@@ -50,8 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         _serve(settings, args.host, args.port)
         return 0
-    print(f"{args.command}: not implemented")
-    print(f"data_dir: {settings.data_dir}")
+    print(format_render_summary(render_site(settings, out_dir=args.out_dir)))
     return 0
 
 

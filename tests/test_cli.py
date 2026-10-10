@@ -26,12 +26,6 @@ def test_help_lists_all_subcommands(capsys):
         assert name in out
 
 
-@pytest.mark.parametrize("command", ["render"])
-def test_subcommand_is_a_stub_that_returns_zero(command, capsys):
-    assert main([command]) == 0
-    assert capsys.readouterr().out.splitlines()[0] == f"{command}: not implemented"
-
-
 def test_serve_passes_host_port_and_settings_to_server(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr("apipulse.cli._serve", lambda *args: calls.append(args))
@@ -53,16 +47,32 @@ def test_no_subcommand_prints_usage_and_returns_two(capsys):
     assert "usage:" in capsys.readouterr().out
 
 
-def test_data_dir_flag_reaches_handler(capsys, monkeypatch):
-    monkeypatch.setenv("APIPULSE_DATA_DIR", "/tmp/e")
-    assert main(["render", "--data-dir", "z"]) == 0
-    assert "data_dir: z" in capsys.readouterr().out.splitlines()
+def test_render_prints_summary_and_returns_zero(tmp_path, capsys):
+    assert main(["render", "--data-dir", str(tmp_path)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"render: 0 api pages, 0 removed, badges: 0 -> {tmp_path}/site"]
 
 
-def test_env_data_dir_reaches_handler(capsys, monkeypatch):
-    monkeypatch.setenv("APIPULSE_DATA_DIR", "/tmp/e")
+def test_data_dir_flag_wins_over_env(tmp_path, monkeypatch):
+    env_dir, flag_dir = tmp_path / "env", tmp_path / "flag"
+    monkeypatch.setenv("APIPULSE_DATA_DIR", str(env_dir))
+    assert main(["render", "--data-dir", str(flag_dir)]) == 0
+    assert (flag_dir / "apipulse.db").exists()
+    assert not env_dir.exists()
+
+
+def test_env_data_dir_is_used_without_flag(tmp_path, monkeypatch):
+    env_dir = tmp_path / "env"
+    monkeypatch.setenv("APIPULSE_DATA_DIR", str(env_dir))
     assert main(["render"]) == 0
-    assert "data_dir: /tmp/e" in capsys.readouterr().out.splitlines()
+    assert (env_dir / "apipulse.db").exists()
+
+
+def test_render_out_dir_flag(tmp_path, capsys):
+    out = tmp_path / "out"
+    assert main(["render", "--data-dir", str(tmp_path / "d"), "--out-dir", str(out)]) == 0
+    assert capsys.readouterr().out.strip().endswith(f"-> {out}")
+    assert (out / "badge").is_dir()
 
 
 def test_probe_one_prints_json_and_returns_zero(capsys, monkeypatch):
