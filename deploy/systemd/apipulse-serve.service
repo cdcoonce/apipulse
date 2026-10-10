@@ -1,0 +1,17 @@
+# systemd USER unit for rammingspeed. Install per deploy/README.md:
+#   cp deploy/systemd/apipulse-serve.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now apipulse-serve
+# It only starts at boot, without a login session, after: sudo loginctl enable-linger cdcoonce
+# Loopback only: exposing it beyond 127.0.0.1 is out of scope for this slice.
+[Unit]
+Description=apipulse API (read-only JSON, loopback)
+
+[Service]
+WorkingDirectory=/home/cdcoonce/src/apipulse
+Environment=APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data
+ExecStart=/home/cdcoonce/.local/bin/uv run --frozen apipulse serve --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
