@@ -1,5 +1,7 @@
 .venv/
-data/
+data/*
+!data/seed.json
+!data/optout.json
 __pycache__/
 *.pyc
 *.parquet

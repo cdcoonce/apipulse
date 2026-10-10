@@ -1,0 +1,94 @@
+[
+  {
+    "id": "httpbin.org",
+    "name": "httpbin",
+    "description": "HTTP request and response testing service.",
+    "tags": [
+      "testing"
+    ],
+    "base_url": "https://httpbin.org",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "api.github.com",
+    "name": "GitHub REST API",
+    "description": "GitHub's public REST API for repositories, issues and users.",
+    "tags": [
+      "developer"
+    ],
+    "base_url": "https://api.github.com",
+    "spec_url": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "api.open-meteo.com",
+    "name": "Open-Meteo",
+    "description": "Free weather forecast API with no key required.",
+    "tags": [
+      "weather"
+    ],
+    "base_url": "https://api.open-meteo.com",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "api.coingecko.com",
+    "name": "CoinGecko",
+    "description": "Cryptocurrency prices and market data.",
+    "tags": [
+      "crypto",
+      "finance"
+    ],
+    "base_url": "https://api.coingecko.com",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "catfact.ninja",
+    "name": "Cat Facts",
+    "description": "Random facts about cats.",
+    "tags": [
+      "animals"
+    ],
+    "base_url": "https://catfact.ninja",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "api.zippopotam.us",
+    "name": "Zippopotam.us",
+    "description": "Postal code lookup for many countries.",
+    "tags": [
+      "geo"
+    ],
+    "base_url": "https://api.zippopotam.us",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  },
+  {
+    "id": "api.chucknorris.io",
+    "name": "Chuck Norris Jokes",
+    "description": "Random Chuck Norris jokes.",
+    "tags": [
+      "entertainment"
+    ],
+    "base_url": "https://api.chucknorris.io",
+    "spec_url": null,
+    "declared_auth": "none",
+    "signup_url": null,
+    "source": "seed"
+  }
+]
