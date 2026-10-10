@@ -1,0 +1,39 @@
+[project]
+name = "apipulse"
+version = "0.1.0"
+description = "Live-probe quality index for public APIs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "fastapi",
+    "uvicorn",
+    "pyarrow",
+]
+
+[project.scripts]
+apipulse = "apipulse.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "respx",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/apipulse"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
