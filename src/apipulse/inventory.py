@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
+
+from apipulse.prober import USER_AGENT
+
 
 @dataclass(frozen=True)
 class ApiRecord:
@@ -68,3 +72,52 @@ def load_optout(path: Path) -> set[str]:
     if not path.exists():
         return set()
     return {entry.lower() for entry in json.loads(path.read_text())}
+
+
+APIS_GURU_INDEX_URL = "https://api.apis.guru/v2/list.json"
+
+
+def parse_apis_guru(index: dict) -> list[ApiRecord]:
+    records: list[ApiRecord] = []
+    for key, entry in index.items():
+        if not isinstance(entry, dict):
+            continue
+        versions = entry.get("versions")
+        if not isinstance(versions, dict) or not versions:
+            continue
+        preferred = entry.get("preferred")
+        version = versions[preferred] if preferred in versions else next(iter(versions.values()))
+        if not isinstance(version, dict):
+            continue
+        spec_url = version.get("swaggerUrl") or version.get("openapiUrl")
+        if not spec_url:
+            continue
+        info = version.get("info")
+        if not isinstance(info, dict):
+            info = {}
+        records.append(
+            ApiRecord(
+                id=key.lower().replace(":", "-"),
+                name=info.get("title") or key,
+                description=(info.get("description") or "")[:500],
+                tags=tuple(info.get("x-apisguru-categories", ())),
+                base_url="https://" + key.split(":", 1)[0],
+                spec_url=spec_url,
+                declared_auth=None,
+                signup_url=None,
+                source="apis.guru",
+            )
+        )
+    return records
+
+
+def fetch_apis_guru(client: httpx.Client | None = None) -> dict:
+    owned = client is None
+    http = httpx.Client() if client is None else client
+    try:
+        response = http.get(APIS_GURU_INDEX_URL, headers={"User-Agent": USER_AGENT})
+        response.raise_for_status()
+        return response.json()
+    finally:
+        if owned:
+            http.close()

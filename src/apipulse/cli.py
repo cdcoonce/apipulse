@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
         command_parser = sub.add_parser(name)
         command_parser.add_argument("--data-dir", type=Path, default=None)
         if name == "refresh-inventory":
-            command_parser.add_argument("--source", default="seed")
+            command_parser.add_argument("--source", default="seed,apis.guru")
     probe_one = sub.add_parser("probe-one")
     probe_one.add_argument("url")
     probe_one.add_argument("--timeout-s", type=float, default=10.0)

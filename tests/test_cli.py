@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import pytest
@@ -65,14 +66,29 @@ def test_probe_one_prints_json_and_returns_zero(capsys, monkeypatch):
     assert json.loads(capsys.readouterr().out)["outcome"] == "dns_failure"
 
 
-def test_refresh_inventory_runs_against_data_dir(tmp_path, capsys):
+def _write_one_seed(tmp_path):
     (tmp_path / "seed.json").write_text(
         json.dumps([{"id": "a", "name": "A", "base_url": "https://a.example.com"}])
     )
     (tmp_path / "optout.json").write_text("[]")
+
+
+def test_refresh_inventory_runs_against_data_dir(tmp_path, capsys):
+    _write_one_seed(tmp_path)
+    assert main(["refresh-inventory", "--source", "seed", "--data-dir", str(tmp_path)]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == "inventory: seed=1 -> 1 active, 0 removed (opt-out), 0 deactivated"
+
+
+def test_refresh_inventory_defaults_to_seed_and_apis_guru(tmp_path, capsys, monkeypatch):
+    _write_one_seed(tmp_path)
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "apis_guru_list.json").read_text())
+    monkeypatch.setattr(
+        "apipulse.commands.refresh_inventory.fetch_apis_guru", lambda client=None: fixture
+    )
     assert main(["refresh-inventory", "--data-dir", str(tmp_path)]) == 0
     first = capsys.readouterr().out.splitlines()[0]
-    assert first == "inventory: 1 active, 0 removed (opt-out), 0 deactivated"
+    assert first.startswith("inventory: seed=1 apis.guru=6 ->")
 
 
 def test_probe_runs_against_inventory_and_prints_summary(tmp_path, capsys, monkeypatch):
@@ -85,7 +101,7 @@ def test_probe_runs_against_inventory_and_prints_summary(tmp_path, capsys, monke
         )
     )
     (tmp_path / "optout.json").write_text("[]")
-    assert main(["refresh-inventory", "--data-dir", str(tmp_path)]) == 0
+    assert main(["refresh-inventory", "--source", "seed", "--data-dir", str(tmp_path)]) == 0
     capsys.readouterr()
     real_client = httpx.Client
     monkeypatch.setattr(

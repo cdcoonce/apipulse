@@ -1,0 +1,247 @@
+{
+  "1forge.com": {
+    "added": "2017-05-30T08:34:14.000Z",
+    "preferred": "0.0.1",
+    "versions": {
+      "0.0.1": {
+        "added": "2017-05-30T08:34:14.000Z",
+        "info": {
+          "contact": {
+            "email": "contact@1forge.com",
+            "name": "1Forge",
+            "url": "http://1forge.com"
+          },
+          "description": "Stock and Forex Data and Realtime Quotes",
+          "title": "1Forge Finance APIs",
+          "version": "0.0.1",
+          "x-apisguru-categories": [
+            "financial"
+          ],
+          "x-logo": {
+            "backgroundColor": "#24292e",
+            "url": "https://api.apis.guru/v2/cache/logo/https_1forge.com_assets_images_f-blue.svg"
+          },
+          "x-origin": [
+            {
+              "format": "swagger",
+              "url": "http://1forge.com/openapi.json",
+              "version": "2.0"
+            }
+          ],
+          "x-providerName": "1forge.com"
+        },
+        "link": "https://api.apis.guru/v2/specs/1forge.com/0.0.1.json",
+        "openapiVer": "2.0",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/1forge.com/0.0.1/swagger.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/1forge.com/0.0.1/swagger.yaml",
+        "updated": "2017-06-27T16:49:57.000Z"
+      }
+    }
+  },
+  "1password.com:events": {
+    "added": "2021-07-19T10:17:09.188Z",
+    "preferred": "1.0.0",
+    "versions": {
+      "1.0.0": {
+        "added": "2021-07-19T10:17:09.188Z",
+        "info": {
+          "description": "1Password Events API Specification.",
+          "title": "Events API",
+          "version": "1.0.0",
+          "x-apisguru-categories": [
+            "security"
+          ],
+          "x-logo": {
+            "url": "https://api.apis.guru/v2/cache/logo/https_upload_wikimedia_org_wikipedia_commons_thumb_e_e3_1password-logo_svg_1280px-1password-logo_svg.svg"
+          },
+          "x-origin": [
+            {
+              "format": "openapi",
+              "url": "https://i.1password.com/media/1password-events-reporting/1password-events-api.yaml",
+              "version": "3.0"
+            }
+          ],
+          "x-providerName": "1password.com",
+          "x-serviceName": "events"
+        },
+        "link": "https://api.apis.guru/v2/specs/1password.com:events/1.0.0.json",
+        "openapiVer": "3.0.0",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/1password.com/events/1.0.0/openapi.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/1password.com/events/1.0.0/openapi.yaml",
+        "updated": "2023-02-27T15:08:09.418Z"
+      }
+    }
+  },
+  "alertersystem.com": {
+    "added": "2023-03-04T15:29:33.880Z",
+    "preferred": "1.6.0",
+    "versions": {
+      "1.6.0": {
+        "added": "2023-03-04T15:29:33.880Z",
+        "info": {
+          "description": "<p>This is the <a href=\"/\">Alerter System</a> API playground. More documentation is available at the <a href=\"/help/developers/\">API Help Center</a>.</p><p>The \"Available Authorizations\" in the Authorize popup only applies to this playground web interface. Other <a href=\"/help/developers/authorization/\">authorizations</a> are available for the actual API.</p>",
+          "title": "Alerter System API",
+          "version": "1.6.0",
+          "x-logo": {
+            "url": "https://api.apis.guru/v2/cache/logo/https_alertersystem.com_build_images_apple-touch-icon.a3295fc1.png"
+          },
+          "x-origin": [
+            {
+              "format": "openapi",
+              "url": "https://www.alertersystem.com/api/docs.json",
+              "version": "3.0"
+            }
+          ],
+          "x-providerName": "alertersystem.com"
+        },
+        "link": "https://api.apis.guru/v2/specs/alertersystem.com/1.6.0.json",
+        "openapiVer": "3.0.0",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/alertersystem.com/1.6.0/openapi.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/alertersystem.com/1.6.0/openapi.yaml",
+        "updated": "2023-03-04T15:29:33.880Z"
+      }
+    }
+  },
+  "apis.guru": {
+    "added": "2015-11-26T17:52:26.000Z",
+    "preferred": "2.2.0",
+    "versions": {
+      "2.2.0": {
+        "added": "2015-11-26T17:52:26.000Z",
+        "externalDocs": {
+          "url": "https://github.com/APIs-guru/openapi-directory/blob/master/API.md"
+        },
+        "info": {
+          "contact": {
+            "email": "mike.ralphson@gmail.com",
+            "name": "APIs.guru",
+            "url": "https://APIs.guru"
+          },
+          "description": "Wikipedia for Web APIs. Repository of API definitions in OpenAPI format.\n**Warning**: If you want to be notified about changes in advance please join our [Slack channel](https://join.slack.com/t/mermade/shared_invite/zt-g78g7xir-MLE_CTCcXCdfJfG3CJe9qA).\nClient sample: [[Demo]](https://apis.guru/simple-ui) [[Repo]](https://github.com/APIs-guru/simple-ui)\n",
+          "license": {
+            "name": "CC0 1.0",
+            "url": "https://github.com/APIs-guru/openapi-directory#licenses"
+          },
+          "title": "APIs.guru",
+          "version": "2.2.0",
+          "x-apisguru-categories": [
+            "open_data",
+            "developer_tools"
+          ],
+          "x-logo": {
+            "url": "https://api.apis.guru/v2/cache/logo/https_apis.guru_branding_logo_vertical.svg"
+          },
+          "x-origin": [
+            {
+              "format": "openapi",
+              "url": "https://api.apis.guru/v2/openapi.yaml",
+              "version": "3.0"
+            }
+          ],
+          "x-providerName": "apis.guru",
+          "x-tags": [
+            "API",
+            "Catalog",
+            "Directory",
+            "REST",
+            "Swagger",
+            "OpenAPI"
+          ]
+        },
+        "link": "https://api.apis.guru/v2/specs/apis.guru/2.2.0.json",
+        "openapiVer": "3.0.0",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/apis.guru/2.2.0/openapi.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/apis.guru/2.2.0/openapi.yaml",
+        "updated": "2023-04-05T13:10:14.812Z"
+      }
+    }
+  },
+  "github.com": {
+    "added": "2021-06-18T13:57:32.889Z",
+    "preferred": "1.1.4",
+    "versions": {
+      "1.1.4": {
+        "added": "2021-06-18T13:57:32.889Z",
+        "externalDocs": {
+          "description": "GitHub v3 REST API",
+          "url": "https://docs.github.com/rest/"
+        },
+        "info": {
+          "contact": {
+            "name": "Support",
+            "url": "https://support.github.com/contact?tags=dotcom-rest-api"
+          },
+          "description": "GitHub's v3 REST API.",
+          "license": {
+            "name": "MIT",
+            "url": "https://spdx.org/licenses/MIT"
+          },
+          "termsOfService": "https://docs.github.com/articles/github-terms-of-service",
+          "title": "GitHub v3 REST API",
+          "version": "1.1.4",
+          "x-apisguru-categories": [
+            "collaboration",
+            "developer_tools"
+          ],
+          "x-github-plan": "api.github.com",
+          "x-logo": {
+            "url": "https://api.apis.guru/v2/cache/logo/https_twitter_com_github_profile_image.svg.jpeg"
+          },
+          "x-origin": [
+            {
+              "format": "openapi",
+              "url": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+              "version": "3.0"
+            }
+          ],
+          "x-providerName": "github.com",
+          "x-serviceName": "api.github.com"
+        },
+        "link": "https://api.apis.guru/v2/specs/github.com/1.1.4.json",
+        "openapiVer": "3.0.3",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/github.com/1.1.4/openapi.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/github.com/1.1.4/openapi.yaml",
+        "updated": "2023-02-15T18:23:37.750Z"
+      }
+    }
+  },
+  "httpbin.org": {
+    "added": "2021-01-13T11:33:47.534Z",
+    "preferred": "0.9.2",
+    "versions": {
+      "0.9.2": {
+        "added": "2021-01-13T11:33:47.534Z",
+        "info": {
+          "contact": {
+            "email": "me@kennethreitz.org",
+            "url": "https://kennethreitz.org",
+            "x-responsibleDeveloper": "Kenneth Reitz",
+            "x-responsibleOrganization": "Kenneth Reitz"
+          },
+          "description": "A simple HTTP Request & Response Service.<br/> <br/> <b>Run locally: </b> <code>$ docker run -p 80:80 kennethreitz/httpbin</code>",
+          "title": "httpbin.org",
+          "version": "0.9.2",
+          "x-apisguru-categories": [
+            "developer_tools"
+          ],
+          "x-logo": {
+            "url": "https://api.apis.guru/v2/cache/logo/https_apis.guru_assets_images_no-logo.svg"
+          },
+          "x-origin": [
+            {
+              "format": "swagger",
+              "url": "http://httpbin.org/spec.json",
+              "version": "2.0"
+            }
+          ],
+          "x-providerName": "httpbin.org"
+        },
+        "link": "https://api.apis.guru/v2/specs/httpbin.org/0.9.2.json",
+        "openapiVer": "3.0.0",
+        "swaggerUrl": "https://api.apis.guru/v2/specs/httpbin.org/0.9.2/openapi.json",
+        "swaggerYamlUrl": "https://api.apis.guru/v2/specs/httpbin.org/0.9.2/openapi.yaml",
+        "updated": "2021-06-21T12:16:53.715Z"
+      }
+    }
+  }
+}
