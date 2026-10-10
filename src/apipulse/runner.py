@@ -47,7 +47,7 @@ def run_probes(
                 errors += 1
                 result = ProbeResult(
                     url=api.base_url,
-                    probed_at=datetime.now(UTC),
+                    probed_at=moment,
                     outcome=Outcome.other_error,
                     status=None,
                     elapsed_ms=None,

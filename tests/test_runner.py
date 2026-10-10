@@ -59,7 +59,7 @@ def test_run_probes_records_a_timeout_and_keeps_going(tmp_path):
     _seed(settings, ["a", "b", "c"])
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "c.example.com":
+        if request.url.host == "b.example.com":
             raise httpx.ConnectTimeout("slow", request=request)
         return httpx.Response(200)
 
@@ -68,7 +68,7 @@ def test_run_probes_records_a_timeout_and_keeps_going(tmp_path):
     assert summary.by_outcome == {"responded": 2, "timeout": 1}
     assert summary.errors == 0
     rows = {r["api_id"]: r["outcome"] for r in pq.read_table(summary.parquet_path).to_pylist()}
-    assert rows == {"a": "responded", "b": "responded", "c": "timeout"}
+    assert rows == {"a": "responded", "b": "timeout", "c": "responded"}
 
 
 def test_run_probes_skips_inactive_apis(tmp_path):
@@ -138,3 +138,4 @@ def test_run_probes_counts_a_raising_probe_as_other_error(tmp_path, monkeypatch)
     assert set(rows) == {"a", "b", "c"}
     assert rows["b"]["outcome"] == "other_error"
     assert rows["b"]["error"] == "boom"
+    assert rows["b"]["probed_at"] == NOW
