@@ -8,7 +8,7 @@
     ],
     "base_url": "https://httpbin.org",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -21,7 +21,7 @@
     ],
     "base_url": "https://api.github.com",
     "spec_url": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -34,7 +34,7 @@
     ],
     "base_url": "https://api.open-meteo.com",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -48,7 +48,7 @@
     ],
     "base_url": "https://api.coingecko.com",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -61,7 +61,7 @@
     ],
     "base_url": "https://catfact.ninja",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -74,7 +74,7 @@
     ],
     "base_url": "https://api.zippopotam.us",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   },
@@ -87,7 +87,7 @@
     ],
     "base_url": "https://api.chucknorris.io",
     "spec_url": null,
-    "declared_auth": "none",
+    "declared_auth": null,
     "signup_url": null,
     "source": "seed"
   }
