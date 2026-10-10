@@ -2,11 +2,11 @@
 # Any rename or removal requires a new path prefix (/v2).
 from datetime import UTC, datetime, timedelta
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from apipulse.config import Settings
 from apipulse.rollup import WINDOW_DAYS, empty_rollup
-from apipulse.store import connect, load_api, load_rollup, read_probes
+from apipulse.store import connect, load_api, load_rollup, read_probes, search_apis
 
 
 def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None) -> dict | None:
@@ -57,6 +57,37 @@ def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None
 
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI()
+
+    @app.get("/v1/apis")
+    def search(q: str, limit: int = Query(20, ge=1, le=200)) -> dict:
+        query = q.strip()
+        if not query:
+            raise HTTPException(status_code=422, detail="q must not be blank")
+        conn = connect(settings)
+        try:
+            hits = search_apis(conn, query, limit=limit)
+        finally:
+            conn.close()
+        return {
+            "query": query,
+            "count": len(hits),
+            "results": [
+                {
+                    "id": h.id,
+                    "name": h.name,
+                    "reachable_30d": h.reachable_30d,
+                    "working_30d": h.working_30d,
+                    "p50_ms": h.p50_ms,
+                    "last_probe_at": (
+                        h.last_probe_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+                        if h.last_probe_at
+                        else None
+                    ),
+                    "active": h.active,
+                }
+                for h in hits
+            ],
+        }
 
     @app.get("/v1/apis/{api_id}")
     def detail(api_id: str) -> dict:

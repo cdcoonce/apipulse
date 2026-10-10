@@ -58,11 +58,28 @@ def connect(settings: Settings) -> sqlite3.Connection:
     return conn
 
 
+def fts_available(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'apis_fts'").fetchone()
+    return row is not None
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(apis)")}
     for column in ("probe_target", "target_selected_at"):
         if column not in existing:
             conn.execute(f"ALTER TABLE apis ADD COLUMN {column} TEXT")
+    if not fts_available(conn):
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE apis_fts USING fts5(id UNINDEXED, name, description, tags)"
+            )
+        except sqlite3.OperationalError:
+            conn.commit()
+            return
+        conn.execute(
+            "INSERT INTO apis_fts (id, name, description, tags)"
+            " SELECT id, name, description, tags FROM apis"
+        )
     conn.commit()
 
 
@@ -124,6 +141,7 @@ def upsert_apis(
                 (*values, r.id, stamp, stamp),
             )
             inserted += 1
+        _index_fts(conn, r)
     kept = {r.id for r in records}
     dropped = [
         row["id"]
@@ -134,6 +152,102 @@ def upsert_apis(
         conn.execute("UPDATE apis SET active = 0 WHERE id = ?", (api_id,))
     conn.commit()
     return UpsertSummary(inserted, updated, len(dropped))
+
+
+def _index_fts(conn: sqlite3.Connection, record: ApiRecord) -> None:
+    if not fts_available(conn):
+        return
+    conn.execute("DELETE FROM apis_fts WHERE id = ?", (record.id,))
+    conn.execute(
+        "INSERT INTO apis_fts (id, name, description, tags) VALUES (?, ?, ?, ?)",
+        (record.id, record.name, record.description, " ".join(record.tags)),
+    )
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    id: str
+    name: str
+    reachable_30d: int
+    working_30d: int
+    p50_ms: int | None
+    last_probe_at: datetime | None
+    active: bool
+    relevance: float
+
+
+def tokenize_query(q: str) -> list[str]:
+    return [t.lower() for t in q.split()]
+
+
+def _hit(row: sqlite3.Row, relevance: float) -> SearchHit:
+    stamp = row["last_probe_at"]
+    return SearchHit(
+        id=row["id"],
+        name=row["name"],
+        reachable_30d=row["reachable_30d"] or 0,
+        working_30d=row["working_30d"] or 0,
+        p50_ms=row["p50_ms"],
+        last_probe_at=datetime.fromisoformat(stamp) if stamp else None,
+        active=bool(row["active"]),
+        relevance=relevance,
+    )
+
+
+_FTS_SEARCH = (
+    "SELECT a.id, a.name, a.active, r.reachable_30d, r.working_30d, r.p50_ms,"
+    " r.last_probe_at, bm25(apis_fts) AS rank"
+    " FROM apis_fts JOIN apis a ON a.id = apis_fts.id"
+    " LEFT JOIN rollups r ON r.api_id = a.id"
+    " WHERE apis_fts MATCH ?"
+    " ORDER BY rank ASC, COALESCE(r.reachable_30d, 0) DESC,"
+    " COALESCE(r.working_30d, 0) DESC, (r.p50_ms IS NULL) ASC, r.p50_ms ASC, a.id ASC"
+    " LIMIT ?"
+)
+
+
+_PLAIN_SEARCH = (
+    "SELECT a.id, a.name, a.description, a.tags, a.active, r.reachable_30d, r.working_30d,"
+    " r.p50_ms, r.last_probe_at FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
+)
+
+
+def _search_plain(conn: sqlite3.Connection, tokens: list[str], limit: int) -> list[SearchHit]:
+    scored: list[SearchHit] = []
+    for row in conn.execute(_PLAIN_SEARCH):
+        columns = (
+            row["name"].lower(),
+            row["description"].lower(),
+            " ".join(json.loads(row["tags"])).lower(),
+        )
+        counts = [sum(1 for c in columns if t in c) for t in tokens]
+        if all(counts):
+            scored.append(_hit(row, float(sum(counts))))
+    scored.sort(
+        key=lambda h: (
+            -h.relevance,
+            -h.reachable_30d,
+            -h.working_30d,
+            h.p50_ms is None,
+            h.p50_ms or 0,
+            h.id,
+        )
+    )
+    return scored[:limit]
+
+
+def search_apis(
+    conn: sqlite3.Connection, q: str, *, limit: int, use_fts: bool | None = None
+) -> list[SearchHit]:
+    tokens = tokenize_query(q)
+    if not tokens:
+        return []
+    if use_fts is None:
+        use_fts = fts_available(conn)
+    if not use_fts:
+        return _search_plain(conn, tokens, limit)
+    match = " AND ".join('"' + t.replace('"', '""') + '"*' for t in tokens)
+    return [_hit(row, -row["rank"]) for row in conn.execute(_FTS_SEARCH, (match, limit))]
 
 
 def load_apis(conn: sqlite3.Connection, *, active_only: bool = True) -> list[ApiRecord]:
