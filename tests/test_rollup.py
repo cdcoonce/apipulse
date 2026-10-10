@@ -7,11 +7,11 @@ NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 URL = "https://a.example.com"
 
 
-def _row(day_offset, status=200, outcome="responded", elapsed=100, url=URL) -> ProbeRow:
+def _row(day_offset, status=200, outcome="responded", elapsed=100, url=URL, hour=1) -> ProbeRow:
     return ProbeRow(
         api_id="a",
         url=url,
-        probed_at=NOW - timedelta(days=day_offset, hours=1),
+        probed_at=NOW - timedelta(days=day_offset, hours=hour),
         outcome=outcome,
         status=status,
         elapsed_ms=elapsed,
@@ -42,7 +42,8 @@ def test_timeouts_count_as_observed_days_but_not_reachable():
 
 
 def test_two_rows_on_one_day_collapse_to_one_day():
-    r = compute_rollup("a", [_row(3, status=500), _row(3, status=200)], now=NOW)
+    # Two probes on the same UTC day, hours apart, must collapse to one observed day.
+    r = compute_rollup("a", [_row(3, status=500, hour=1), _row(3, status=200, hour=9)], now=NOW)
     assert (r.reachable_30d, r.working_30d, r.days_observed_30d) == (1, 1, 1)
 
 
