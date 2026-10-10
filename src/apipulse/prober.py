@@ -67,6 +67,8 @@ def probe(
         elapsed_ms = round((time.perf_counter() - start) * 1000)
     except httpx.HTTPError as exc:
         return _failure(url, probed_at, _classify(exc), exc)
+    except Exception as exc:  # noqa: BLE001 - contract: probe never raises
+        return _failure(url, probed_at, Outcome.other_error, exc)
     finally:
         http.max_redirects = previous_max
         if owns_client:

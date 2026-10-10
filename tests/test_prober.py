@@ -145,3 +145,14 @@ def test_to_json_round_trips_every_field():
     assert data["probed_at"].endswith(("+00:00", "Z"))
     assert type(data["outcome"]) is str
     assert data["outcome"] == "responded"
+
+
+def test_non_httpx_transport_error_is_other_error_and_never_raises():
+    def handler(request):
+        raise RuntimeError("transport exploded")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = probe("https://example.test/", client=client)
+    assert result.outcome is Outcome.other_error
+    assert result.status is None
+    assert "transport exploded" in (result.error or "")
