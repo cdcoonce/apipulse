@@ -5,6 +5,7 @@ from apipulse import __version__
 from apipulse.commands import refresh_inventory
 from apipulse.config import resolve_settings
 from apipulse.prober import probe, to_json
+from apipulse.runner import format_summary, run_probes
 
 COMMANDS = ("refresh-inventory", "probe", "render", "serve")
 
@@ -31,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     settings = resolve_settings(args.data_dir)
     if args.command == "refresh-inventory":
         print(refresh_inventory.run(settings, source=args.source))
+        return 0
+    if args.command == "probe":
+        print(format_summary(run_probes(settings)))
         return 0
     print(f"{args.command}: not implemented")
     print(f"data_dir: {settings.data_dir}")
