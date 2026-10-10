@@ -52,6 +52,15 @@ def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None
         "latency": {"p50_ms": rollup.p50_ms, "p95_ms": rollup.p95_ms},
         "last_probe": last_probe,
         "history": history,
+        "auth": {
+            "classified": rollup.auth,
+            "declared": record.declared_auth,
+            "signup_url": record.signup_url,
+        },
+        "ratelimit": {
+            "headers_seen": list(rollup.ratelimit_headers_seen),
+            "saw_429_30d": rollup.saw_429_30d,
+        },
     }
 
 
@@ -84,6 +93,7 @@ def create_app(settings: Settings) -> FastAPI:
                         else None
                     ),
                     "active": h.active,
+                    "auth": h.auth,
                 }
                 for h in hits
             ],

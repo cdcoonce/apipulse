@@ -25,8 +25,8 @@ def _rec(id: str, description: str, tags: tuple[str, ...]) -> ApiRecord:
     )
 
 
-def _roll(api_id: str, reachable: int, working: int, p50: int) -> Rollup:
-    return Rollup(api_id, reachable, working, 30, p50, None, NOW, "responded", 200, None)
+def _roll(api_id: str, reachable: int, working: int, p50: int, auth: str = "unknown") -> Rollup:
+    return Rollup(api_id, reachable, working, 30, p50, None, NOW, "responded", 200, None, auth=auth)
 
 
 SEED = [
@@ -45,7 +45,10 @@ def _client(tmp_path) -> TestClient:
         upsert_apis(conn, SEED, seen_at=NOW)
         upsert_rollups(
             conn,
-            [_roll("openweathermap", 30, 29, 100), _roll("weatherbit", 25, 20, 150)],
+            [
+                _roll("openweathermap", 30, 29, 100, "keyless"),
+                _roll("weatherbit", 25, 20, 150, "key-required"),
+            ],
             computed_at=datetime(2026, 10, 10, tzinfo=UTC),
         )
     finally:
@@ -68,6 +71,7 @@ def test_search_route_payload_shape(tmp_path):
             "p50_ms",
             "last_probe_at",
             "active",
+            "auth",
         }
     first = body["results"][0]
     assert first["last_probe_at"] == "2026-10-10T12:00:00Z"
@@ -89,3 +93,13 @@ def test_detail_route_still_works(tmp_path):
     response = _client(tmp_path).get("/v1/apis/openweathermap")
     assert response.status_code == 200
     assert response.json()["id"] == "openweathermap"
+
+
+def test_search_results_carry_auth_from_the_rollup(tmp_path):
+    results = _client(tmp_path).get("/v1/apis", params={"q": "weather"}).json()["results"]
+    assert {r["id"]: r["auth"] for r in results} == {
+        "openweathermap": "keyless",
+        "weatherbit": "key-required",
+        "nws": "unknown",
+        "deadapi": "unknown",
+    }
