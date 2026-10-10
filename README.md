@@ -13,6 +13,16 @@ Every command accepts `--data-dir PATH`. The data directory defaults to `./data`
 
 Search uses SQLite FTS5 when the bundled SQLite has it, and falls back to substring matching otherwise.
 
+## Badge
+
+Every API gets an SVG badge at `badge/<id>.svg` on the published site; embed it with:
+
+```markdown
+![apipulse](https://<site>/badge/<id>.svg)
+```
+
+The badge shows reachable days out of 30 and median latency.
+
 ## Project page
 
 What apipulse sends, how often, and how to opt out: to be written.
