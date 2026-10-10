@@ -67,13 +67,17 @@ def _rollup(api_id: str) -> Rollup:
 
 
 def _make_data_dir(data_dir: Path, *, probe_rows: int = 3, rollups: int = 2) -> Path:
-    """A data dir shaped like a real run: monthly Parquet, db with rollups, rendered site."""
+    """A data dir shaped like a real run: monthly Parquet, db with rollups, rendered site.
+
+    The inventory holds one more API than there are rollups (a newly added API not yet
+    probed), so a script counting the wrong table cannot print the right number.
+    """
     settings = Settings(data_dir=data_dir)
-    ids = [f"api{i}" for i in range(rollups)]
+    ids = [f"api{i}" for i in range(rollups + 1)]
     conn = connect(settings)
     try:
         upsert_apis(conn, [_record(i) for i in ids], seen_at=NOW)
-        upsert_rollups(conn, [_rollup(i) for i in ids], computed_at=NOW)
+        upsert_rollups(conn, [_rollup(i) for i in ids[:rollups]], computed_at=NOW)
     finally:
         conn.close()
     parquet = append_probes(settings, [("api0", _result())] * probe_rows, now=NOW)
@@ -145,6 +149,20 @@ def test_verify_run_judges_the_lexically_last_monthly_file_not_the_newest_mtime(
 def test_verify_run_takes_the_data_dir_from_the_first_argument(tmp_path):
     _make_data_dir(tmp_path)
     assert _verify(tmp_path, arg=True).returncode == 0
+
+
+def test_verify_run_argument_wins_over_the_environment(tmp_path):
+    good = tmp_path / "good"
+    empty = tmp_path / "empty"
+    good.mkdir()
+    empty.mkdir()
+    parquet = _make_data_dir(good)
+    env = {**os.environ, "PYTHON": sys.executable, "APIPULSE_DATA_DIR": str(empty)}
+    result = subprocess.run(
+        ["bash", str(VERIFY), str(good)], env=env, capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    assert parquet.name in result.stdout
 
 
 def test_verify_run_reports_a_missing_site_without_failing(tmp_path):
