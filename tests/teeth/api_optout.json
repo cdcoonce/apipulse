@@ -1,0 +1,101 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "FTS search does not exclude opted-out ids",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "\" WHERE apis_fts MATCH ? AND a.id NOT IN (SELECT key FROM optouts)\"",
+      "replace": "\" WHERE apis_fts MATCH ?\""
+    },
+    {
+      "label": "plain search does not exclude opted-out ids",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "\" WHERE a.id NOT IN (SELECT key FROM optouts)\"\n)",
+      "replace": ")"
+    },
+    {
+      "label": "FTS excludes opted-out ids after LIMIT (Python post-filter)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "return [_hit(row, -row[\"rank\"]) for row in conn.execute(_FTS_SEARCH, (match, limit))]",
+      "replace": "sql = _FTS_SEARCH.replace(\" AND a.id NOT IN (SELECT key FROM optouts)\", \"\")\n    return [_hit(row, -row[\"rank\"]) for row in conn.execute(sql, (match, limit)) if not is_opted_out(conn, row[\"id\"])]"
+    },
+    {
+      "label": "FTS search hides inactive instead of opted-out",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "\" WHERE apis_fts MATCH ? AND a.id NOT IN (SELECT key FROM optouts)\"",
+      "replace": "\" WHERE apis_fts MATCH ? AND a.active = 1\""
+    },
+    {
+      "label": "plain search hides inactive instead of opted-out",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "\" WHERE a.id NOT IN (SELECT key FROM optouts)\"\n)",
+      "replace": "\" WHERE a.active = 1\"\n)"
+    },
+    {
+      "label": "detail never checks optouts",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "if is_opted_out(conn, api_id):",
+      "replace": "if False:"
+    },
+    {
+      "label": "detail checks optouts only for ids still in apis",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "if is_opted_out(conn, api_id):",
+      "replace": "if load_api(conn, api_id) is not None and is_opted_out(conn, api_id):"
+    },
+    {
+      "label": "detail treats inactive as opted out",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "if is_opted_out(conn, api_id):",
+      "replace": "if (found := load_api(conn, api_id)) is not None and not found[1]:"
+    },
+    {
+      "label": "opted-out detail answers 404 instead of 410",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "status_code=410",
+      "replace": "status_code=404"
+    },
+    {
+      "label": "detail fails closed: every id reads as opted out",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "return conn.execute(\"SELECT 1 FROM optouts WHERE key = ?\", (api_id,)).fetchone() is not None",
+      "replace": "return True"
+    },
+    {
+      "label": "[control] is_opted_out selects key instead of a constant",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "expect": "survived",
+      "why": "is_opted_out reads only row presence (fetchone() is not None); the selected column is never read. Holds for every caller: a matched row is a non-None tuple even if its column were NULL, and `key = ?` with a str id never matches a NULL key. Would stop holding only if a caller started reading the value.",
+      "find": "conn.execute(\"SELECT 1 FROM optouts WHERE key = ?\"",
+      "replace": "conn.execute(\"SELECT key FROM optouts WHERE key = ?\""
+    }
+  ]
+}

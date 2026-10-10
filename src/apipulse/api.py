@@ -12,6 +12,7 @@ from apipulse.store import (
     ProbeRow,
     SearchHit,
     connect,
+    is_opted_out,
     load_api,
     load_rollup,
     read_probes,
@@ -85,10 +86,17 @@ def search_summary(hit: SearchHit) -> dict:
     }
 
 
+class ApiOptedOut(Exception):
+    """The maintainer asked for this API to be removed; its id stays recorded."""
+
+
 def build_detail(settings: Settings, api_id: str, *, now: datetime | None = None) -> dict | None:
+    """The detail payload, None for an unknown id; raises ApiOptedOut for an opted-out one."""
     moment = now or datetime.now(UTC)
     conn = connect(settings)
     try:
+        if is_opted_out(conn, api_id):
+            raise ApiOptedOut(api_id)
         found = load_api(conn, api_id)
         rollup = load_rollup(conn, api_id) or empty_rollup(api_id)
     finally:
@@ -125,7 +133,12 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/v1/apis/{api_id}")
     def detail(api_id: str) -> dict:
-        payload = build_detail(settings, api_id)
+        try:
+            payload = build_detail(settings, api_id)
+        except ApiOptedOut:
+            raise HTTPException(
+                status_code=410, detail="removed at the maintainer's request"
+            ) from None
         if payload is None:
             raise HTTPException(status_code=404, detail="unknown api id")
         return payload

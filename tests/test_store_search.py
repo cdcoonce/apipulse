@@ -1,10 +1,18 @@
 from dataclasses import replace
 from datetime import UTC, datetime
 
+import pytest
+
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.rollup import Rollup
-from apipulse.store import connect, search_apis, upsert_apis, upsert_rollups
+from apipulse.store import (
+    connect,
+    record_optouts,
+    search_apis,
+    upsert_apis,
+    upsert_rollups,
+)
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 
@@ -175,3 +183,45 @@ def test_search_hits_carry_auth_on_both_paths(tmp_path):
             assert hits == {"a": "keyless", "b": "unknown"}
     finally:
         conn.close()
+
+
+def _optout_fixture(tmp_path, *, extra_controls: int = 1):
+    """Same-text weather APIs: `gone` (opted out, deactivated, best reachable), `idle`
+    (deactivated, not opted out) and `extra_controls` active controls."""
+    conn = connect(Settings(data_dir=tmp_path))
+    controls = [f"live{i}" for i in range(extra_controls)]
+    ids = ["gone", "idle", *controls]
+    records = [_rec(i, "forecast", "Weather forecasts", ("weather",)) for i in ids]
+    upsert_apis(conn, records, seen_at=NOW)
+    upsert_rollups(
+        conn,
+        [_roll("gone", 30, 30, 10), _roll("idle", 5, 5, 10)]
+        + [_roll(c, 20 - n, 20 - n, 10) for n, c in enumerate(controls)],
+        computed_at=NOW,
+    )
+    upsert_apis(conn, [r for r in records if r.id not in {"gone", "idle"}], seen_at=NOW)
+    record_optouts(conn, [r for r in records if r.id == "gone"], recorded_at=NOW)
+    return conn
+
+
+@pytest.mark.parametrize("use_fts", [True, False])
+def test_search_excludes_opted_out_but_keeps_inactive_and_active(tmp_path, use_fts):
+    conn = _optout_fixture(tmp_path)
+    hits = {h.id: h.active for h in search_apis(conn, "weather", limit=20, use_fts=use_fts)}
+    assert hits == {"idle": False, "live0": True}
+
+
+@pytest.mark.parametrize("use_fts", [True, False])
+def test_search_limit_is_filled_after_excluding_opted_out(tmp_path, use_fts):
+    # `gone` has the best reachable_30d, so it would rank first absent the filter.
+    conn = _optout_fixture(tmp_path, extra_controls=4)
+    opted_out = conn.execute("SELECT key, recorded_at FROM optouts").fetchall()
+    conn.execute("DELETE FROM optouts")
+    conn.commit()
+    # Precondition: absent the opt-out, `gone` would sit inside the top 3.
+    assert search_apis(conn, "weather", limit=3, use_fts=use_fts)[0].id == "gone"
+    conn.executemany("INSERT INTO optouts (key, recorded_at) VALUES (?, ?)", opted_out)
+    conn.commit()
+    hits = search_apis(conn, "weather", limit=3, use_fts=use_fts)
+    assert len(hits) == 3
+    assert "gone" not in {h.id for h in hits}
