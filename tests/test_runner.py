@@ -100,6 +100,8 @@ def _summary(by_outcome: dict[str, int], **kw) -> RunSummary:
         parquet_path=Path("data/probes/2026-10.parquet"),
         rollups=3,
         targets_refreshed=0,
+        keyless=3,
+        key_required=2,
     )
     return RunSummary(**{**base, **kw})
 
@@ -108,14 +110,15 @@ def test_format_summary_lists_non_responded_outcomes_in_enum_order():
     text = format_summary(_summary({"responded": 5, "dns_failure": 2, "timeout": 1}))
     assert text == (
         "probe: 8 probed, 5 responded, 5 working, timeout=1, dns_failure=2, "
-        "0 errors, targets_refreshed: 0, 4312 ms -> data/probes/2026-10.parquet, rollups: 3"
+        "0 errors, targets_refreshed: 0, 4312 ms -> data/probes/2026-10.parquet, "
+        "rollups: 3, keyless: 3, key-required: 2"
     )
 
 
 def test_format_summary_omits_outcomes_segment_when_all_responded():
     assert format_summary(_summary({"responded": 7})) == (
         "probe: 7 probed, 7 responded, 7 working, 0 errors, targets_refreshed: 0, 4312 ms -> "
-        "data/probes/2026-10.parquet, rollups: 3"
+        "data/probes/2026-10.parquet, rollups: 3, keyless: 3, key-required: 2"
     )
 
 
@@ -267,5 +270,43 @@ def test_format_summary_renders_targets_refreshed_before_wall_time():
     text = format_summary(_summary({"responded": 7}, targets_refreshed=3))
     assert text == (
         "probe: 7 probed, 7 responded, 7 working, 0 errors, targets_refreshed: 3, 4312 ms -> "
-        "data/probes/2026-10.parquet, rollups: 3"
+        "data/probes/2026-10.parquet, rollups: 3, keyless: 3, key-required: 2"
     )
+
+
+def _run_days(settings, status, days):
+    summary = None
+    for i in range(days):
+        client = _client(lambda request: httpx.Response(status))
+        summary = run_probes(settings, client=client, now=NOW + timedelta(days=i))
+    return summary
+
+
+def test_keyless_needs_three_consecutive_days_of_200s(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a"])
+    two = _run_days(settings, 200, 2)
+    assert two.keyless == 0
+    conn = connect(settings)
+    try:
+        assert load_rollup(conn, "a").auth == "unknown"
+    finally:
+        conn.close()
+    third = run_probes(
+        settings,
+        client=_client(lambda request: httpx.Response(200)),
+        now=NOW + timedelta(days=2),
+    )
+    assert third.keyless == 1
+    conn = connect(settings)
+    try:
+        assert load_rollup(conn, "a").auth == "keyless"
+    finally:
+        conn.close()
+
+
+def test_key_required_after_three_days_of_401s(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a"])
+    summary = _run_days(settings, 401, 3)
+    assert (summary.keyless, summary.key_required) == (0, 1)

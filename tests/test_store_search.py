@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from apipulse.config import Settings
@@ -158,3 +159,19 @@ def test_existing_database_is_backfilled_into_fts_on_connect(tmp_path):
         "nws",
         "deadapi",
     }
+
+
+def test_search_hits_carry_auth_on_both_paths(tmp_path):
+    conn = connect(Settings(data_dir=tmp_path))
+    try:
+        upsert_apis(
+            conn,
+            [_rec("a", "alpha", "x", ()), _rec("b", "beta", "x", ())],
+            seen_at=NOW,
+        )
+        upsert_rollups(conn, [replace(_roll("a", 1, 1, 10), auth="keyless")], computed_at=NOW)
+        for use_fts in (True, False):
+            hits = {h.id: h.auth for h in search_apis(conn, "x", limit=5, use_fts=use_fts)}
+            assert hits == {"a": "keyless", "b": "unknown"}
+    finally:
+        conn.close()

@@ -44,9 +44,19 @@ CREATE TABLE IF NOT EXISTS rollups (
     last_outcome TEXT,
     last_status INTEGER,
     probe_target TEXT,
-    computed_at TEXT NOT NULL
+    computed_at TEXT NOT NULL,
+    auth TEXT NOT NULL DEFAULT 'unknown',
+    ratelimit_headers_seen TEXT NOT NULL DEFAULT '[]',
+    saw_429_30d INTEGER NOT NULL DEFAULT 0
 );
 """
+
+
+_ROLLUP_SIGNAL_DDL = {
+    "auth": "TEXT NOT NULL DEFAULT 'unknown'",
+    "ratelimit_headers_seen": "TEXT NOT NULL DEFAULT '[]'",
+    "saw_429_30d": "INTEGER NOT NULL DEFAULT 0",
+}
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -68,6 +78,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column in ("probe_target", "target_selected_at"):
         if column not in existing:
             conn.execute(f"ALTER TABLE apis ADD COLUMN {column} TEXT")
+    rollup_columns = {row["name"] for row in conn.execute("PRAGMA table_info(rollups)")}
+    for column, ddl in _ROLLUP_SIGNAL_DDL.items():
+        if column not in rollup_columns:
+            conn.execute(f"ALTER TABLE rollups ADD COLUMN {column} {ddl}")
     if not fts_available(conn):
         try:
             conn.execute(
@@ -174,6 +188,7 @@ class SearchHit:
     last_probe_at: datetime | None
     active: bool
     relevance: float
+    auth: str
 
 
 def tokenize_query(q: str) -> list[str]:
@@ -191,12 +206,13 @@ def _hit(row: sqlite3.Row, relevance: float) -> SearchHit:
         last_probe_at=datetime.fromisoformat(stamp) if stamp else None,
         active=bool(row["active"]),
         relevance=relevance,
+        auth=row["auth"] or "unknown",
     )
 
 
 _FTS_SEARCH = (
     "SELECT a.id, a.name, a.active, r.reachable_30d, r.working_30d, r.p50_ms,"
-    " r.last_probe_at, bm25(apis_fts) AS rank"
+    " r.last_probe_at, r.auth, bm25(apis_fts) AS rank"
     " FROM apis_fts JOIN apis a ON a.id = apis_fts.id"
     " LEFT JOIN rollups r ON r.api_id = a.id"
     " WHERE apis_fts MATCH ?"
@@ -208,7 +224,7 @@ _FTS_SEARCH = (
 
 _PLAIN_SEARCH = (
     "SELECT a.id, a.name, a.description, a.tags, a.active, r.reachable_30d, r.working_30d,"
-    " r.p50_ms, r.last_probe_at FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
+    " r.p50_ms, r.last_probe_at, r.auth FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
 )
 
 
@@ -313,6 +329,9 @@ _ROLLUP_COLUMNS = (
     "last_outcome",
     "last_status",
     "probe_target",
+    "auth",
+    "ratelimit_headers_seen",
+    "saw_429_30d",
 )
 
 
@@ -337,6 +356,9 @@ def upsert_rollups(
                 r.last_outcome,
                 r.last_status,
                 r.probe_target,
+                r.auth,
+                json.dumps(list(r.ratelimit_headers_seen)),
+                int(r.saw_429_30d),
                 _iso(computed_at),
             )
             for r in rollups
@@ -358,6 +380,9 @@ def _rollup_from_row(row: sqlite3.Row) -> Rollup:
         last_outcome=row["last_outcome"],
         last_status=row["last_status"],
         probe_target=row["probe_target"],
+        auth=row["auth"],
+        ratelimit_headers_seen=tuple(json.loads(row["ratelimit_headers_seen"])),
+        saw_429_30d=bool(row["saw_429_30d"]),
     )
 
 

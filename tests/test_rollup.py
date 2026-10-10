@@ -1,6 +1,7 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from apipulse.rollup import WINDOW_DAYS, compute_rollup, empty_rollup
+from apipulse.rollup import WINDOW_DAYS, classify_auth, compute_rollup, empty_rollup
 from apipulse.store import ProbeRow
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
@@ -83,3 +84,62 @@ def test_empty_rollup_is_zeros_and_nones_and_matches_no_rows():
     assert (r.p50_ms, r.p95_ms, r.last_probe_at) == (None, None, None)
     assert (r.last_outcome, r.last_status, r.probe_target) == (None, None, None)
     assert compute_rollup("x", [], now=NOW) == r
+
+
+def test_classify_auth_uses_first_three_statuses_only():
+    assert classify_auth([200, 200, 204]) == "keyless"
+    assert classify_auth([401, 403, 401]) == "key-required"
+    assert classify_auth([200, 401, 200]) == "unknown"
+    assert classify_auth([200, 200]) == "unknown"
+    assert classify_auth([200, 200, 200, 401]) == "keyless"
+
+
+def test_auth_classification_takes_the_newest_three_responded_rows():
+    # day_offset 0..4 => newest first; oldest two are 200, newest three are 401/403/401.
+    rows = [
+        _row(4, status=200),
+        _row(0, status=401),
+        _row(3, status=200),
+        _row(2, status=401),
+        _row(1, status=403),
+    ]
+    assert compute_rollup("a", rows, now=NOW).auth == "key-required"
+
+
+def test_auth_classification_respects_the_window():
+    # A 200 newer than `now` is outside the window; unfiltered it would break the 401 streak.
+    future = _row(0, status=200, hour=-5)
+    in_window = [_row(1, status=401), _row(2, status=401), _row(3, status=401)]
+    assert compute_rollup("a", [future, *in_window], now=NOW).auth == "key-required"
+    # A stale 401 beyond the window must not make up a third sample.
+    stale = _row(WINDOW_DAYS + 5, status=401)
+    assert compute_rollup("a", [stale, *in_window[:2]], now=NOW).auth == "unknown"
+
+
+def _with_headers(row: ProbeRow, headers: str) -> ProbeRow:
+    return replace(row, ratelimit_headers_json=headers)
+
+
+def test_ratelimit_headers_seen_is_sorted_deduplicated_and_windowed():
+    rows = [
+        _with_headers(_row(1), '{"x-ratelimit-limit":"60"}'),
+        _with_headers(_row(2, status=500), '{"retry-after":"30","x-ratelimit-limit":"60"}'),
+        _with_headers(_row(3), "{}"),
+        _with_headers(_row(4), "not json"),
+        _with_headers(_row(WINDOW_DAYS + 5), '{"ratelimit-remaining":"1"}'),
+    ]
+    assert compute_rollup("a", rows, now=NOW).ratelimit_headers_seen == (
+        "retry-after",
+        "x-ratelimit-limit",
+    )
+
+
+def test_saw_429_only_counts_in_window_rows():
+    assert compute_rollup("a", [_row(1, status=429)], now=NOW).saw_429_30d is True
+    assert compute_rollup("a", [_row(WINDOW_DAYS + 5, status=429)], now=NOW).saw_429_30d is False
+    assert compute_rollup("a", [_row(1, status=200)], now=NOW).saw_429_30d is False
+
+
+def test_empty_rollup_has_signal_defaults():
+    r = empty_rollup("x")
+    assert (r.auth, r.ratelimit_headers_seen, r.saw_429_30d) == ("unknown", (), False)

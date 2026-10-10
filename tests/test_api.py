@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -175,4 +176,36 @@ def test_payload_keys_are_the_public_contract(tmp_path):
         "latency",
         "last_probe",
         "history",
+        "auth",
+        "ratelimit",
     }
+
+
+def test_detail_carries_auth_and_ratelimit_signals(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    record = replace(_rec("a"), declared_auth="apiKey", signup_url="https://x/signup")
+    conn = connect(settings)
+    try:
+        upsert_apis(conn, [record], seen_at=NOW)
+        rollup = Rollup(
+            "a", 1, 0, 1, None, None, None, None, None, None,
+            auth="key-required", ratelimit_headers_seen=("retry-after",), saw_429_30d=True,
+        )  # fmt: skip
+        upsert_rollups(conn, [rollup], computed_at=NOW)
+    finally:
+        conn.close()
+    body = _client(settings).get("/v1/apis/a").json()
+    assert body["auth"] == {
+        "classified": "key-required",
+        "declared": "apiKey",
+        "signup_url": "https://x/signup",
+    }
+    assert body["ratelimit"] == {"headers_seen": ["retry-after"], "saw_429_30d": True}
+
+
+def test_detail_without_rollup_has_unknown_auth_and_no_ratelimit_signals(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a"])
+    body = _client(settings).get("/v1/apis/a").json()
+    assert body["auth"] == {"classified": "unknown", "declared": None, "signup_url": None}
+    assert body["ratelimit"] == {"headers_seen": [], "saw_429_30d": False}

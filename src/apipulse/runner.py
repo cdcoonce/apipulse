@@ -7,7 +7,7 @@ import httpx
 
 from apipulse.config import Settings
 from apipulse.prober import Outcome, ProbeResult, probe
-from apipulse.rollup import compute_rollup, empty_rollup
+from apipulse.rollup import AUTH_KEY_REQUIRED, AUTH_KEYLESS, compute_rollup, empty_rollup
 from apipulse.store import (
     ProbeRow,
     append_probes,
@@ -32,6 +32,8 @@ class RunSummary:
     parquet_path: Path
     rollups: int
     targets_refreshed: int
+    keyless: int
+    key_required: int
 
 
 def run_probes(
@@ -121,6 +123,8 @@ def run_probes(
         parquet_path=path,
         rollups=len(rollups),
         targets_refreshed=targets_refreshed,
+        keyless=sum(1 for r in rollups if r.auth == AUTH_KEYLESS),
+        key_required=sum(1 for r in rollups if r.auth == AUTH_KEY_REQUIRED),
     )
 
 
@@ -135,5 +139,6 @@ def format_summary(summary: RunSummary) -> str:
         f"{summary.working} working, {outcomes}{summary.errors} errors, "
         f"targets_refreshed: {summary.targets_refreshed}, {summary.wall_ms} ms -> "
         f"{summary.parquet_path}, "
-        f"rollups: {summary.rollups}"
+        f"rollups: {summary.rollups}, keyless: {summary.keyless}, "
+        f"key-required: {summary.key_required}"
     )
