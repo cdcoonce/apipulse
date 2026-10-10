@@ -8,13 +8,15 @@ from apipulse.inventory import (
     apply_optout,
     dedupe_by_host,
     fetch_apis_guru,
+    fetch_public_apis,
     load_optout,
     load_seed,
     parse_apis_guru,
+    parse_public_apis,
 )
 from apipulse.store import connect, load_apis, record_optouts, upsert_apis
 
-SOURCES = ("seed", "apis.guru")
+SOURCES = ("seed", "apis.guru", "public-apis")
 
 
 def _parse_sources(source: str) -> list[str]:
@@ -28,7 +30,7 @@ def _parse_sources(source: str) -> list[str]:
 def run(
     settings: Settings,
     *,
-    source: str = "seed,apis.guru",
+    source: str = "seed,apis.guru,public-apis",
     now: datetime | None = None,
     client: httpx.Client | None = None,
 ) -> str:
@@ -39,8 +41,10 @@ def run(
     for name in names:
         if name == "seed":
             batch = load_seed(settings.data_dir / "seed.json")
-        else:
+        elif name == "apis.guru":
             batch = parse_apis_guru(fetch_apis_guru(client))
+        else:
+            batch = parse_public_apis(fetch_public_apis(client))
         counts.append(f"{name}={len(batch)}")
         records.extend(batch)
     optout = load_optout(settings.data_dir / "optout.json")
