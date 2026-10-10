@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from apipulse import runner
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.runner import RunSummary, format_summary, run_probes
-from apipulse.store import connect, load_rollup, upsert_apis
+from apipulse.store import connect, load_probe_targets, load_rollup, upsert_apis
 
 NOW = datetime(2026, 10, 10, tzinfo=UTC)
 
@@ -98,6 +99,7 @@ def _summary(by_outcome: dict[str, int], **kw) -> RunSummary:
         wall_ms=4312,
         parquet_path=Path("data/probes/2026-10.parquet"),
         rollups=3,
+        targets_refreshed=0,
     )
     return RunSummary(**{**base, **kw})
 
@@ -106,20 +108,22 @@ def test_format_summary_lists_non_responded_outcomes_in_enum_order():
     text = format_summary(_summary({"responded": 5, "dns_failure": 2, "timeout": 1}))
     assert text == (
         "probe: 8 probed, 5 responded, 5 working, timeout=1, dns_failure=2, "
-        "0 errors, 4312 ms -> data/probes/2026-10.parquet, rollups: 3"
+        "0 errors, targets_refreshed: 0, 4312 ms -> data/probes/2026-10.parquet, rollups: 3"
     )
 
 
 def test_format_summary_omits_outcomes_segment_when_all_responded():
     assert format_summary(_summary({"responded": 7})) == (
-        "probe: 7 probed, 7 responded, 7 working, 0 errors, 4312 ms -> "
+        "probe: 7 probed, 7 responded, 7 working, 0 errors, targets_refreshed: 0, 4312 ms -> "
         "data/probes/2026-10.parquet, rollups: 3"
     )
 
 
 def test_format_summary_for_empty_run():
     text = format_summary(_summary({}))
-    assert text.startswith("probe: 0 probed, 0 responded, 0 working, 0 errors, 4312 ms -> ")
+    assert text.startswith(
+        "probe: 0 probed, 0 responded, 0 working, 0 errors, targets_refreshed: 0, "
+    )
 
 
 def test_run_probes_counts_a_raising_probe_as_other_error(tmp_path, monkeypatch):
@@ -174,3 +178,94 @@ def test_run_probes_does_not_recompute_inactive_apis(tmp_path):
         conn.close()
     assert a is not None and a.days_observed_30d == 2
     assert b is not None and b.days_observed_30d == 1
+
+
+SPEC_URL = "https://a.example.com/openapi.json"
+SPEC = {
+    "openapi": "3.0.0",
+    "servers": [{"url": "https://api.example.com/v2"}],
+    "paths": {"/": {"get": {}}, "/users/{id}": {"get": {}}},
+}
+
+
+def _seed_with_spec(settings: Settings, ids: list[str], spec_url: str | None = SPEC_URL) -> None:
+    conn = connect(settings)
+    try:
+        records = [
+            ApiRecord(**{**_rec(i).__dict__, "spec_url": spec_url if i == "a" else None})
+            for i in ids
+        ]
+        upsert_apis(conn, records, seen_at=NOW)
+    finally:
+        conn.close()
+
+
+def _spec_handler(requested: list[str], status: int = 200):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == SPEC_URL:
+            requested.append(SPEC_URL)
+            if status != 200:
+                return httpx.Response(status)
+            return httpx.Response(200, text=json.dumps(SPEC))
+        return httpx.Response(200)
+
+    return handler
+
+
+def test_run_probes_selects_target_from_spec_and_probes_it(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_with_spec(settings, ["a"])
+    summary = run_probes(settings, client=_client(_spec_handler([])), now=NOW)
+    assert summary.targets_refreshed == 1
+    assert summary.probed == 1
+    conn = connect(settings)
+    try:
+        assert load_probe_targets(conn) == {"a": ("https://api.example.com/v2/", NOW)}
+    finally:
+        conn.close()
+    rows = pq.read_table(summary.parquet_path).to_pylist()
+    assert [(r["api_id"], r["url"]) for r in rows] == [("a", "https://api.example.com/v2/")]
+
+
+def test_second_run_same_day_skips_the_spec_and_ttl_expiry_refetches(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_with_spec(settings, ["a"])
+    requested: list[str] = []
+    client = _client(_spec_handler(requested))
+    run_probes(settings, client=client, now=NOW)
+    assert len(requested) == 1
+    again = run_probes(settings, client=client, now=NOW)
+    assert again.targets_refreshed == 0
+    assert len(requested) == 1
+    later = run_probes(settings, client=client, now=NOW + timedelta(days=31))
+    assert later.targets_refreshed == 1
+    assert len(requested) == 2
+
+
+def test_failed_spec_fetch_falls_back_to_base_url_and_specless_api_is_not_fetched(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_with_spec(settings, ["a", "b"])
+    requested: list[str] = []
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(str(request.url))
+        return _spec_handler(requested, status=404)(request)
+
+    summary = run_probes(settings, client=_client(handler), now=NOW)
+    assert summary.targets_refreshed == 1
+    conn = connect(settings)
+    try:
+        assert load_probe_targets(conn) == {"a": ("https://a.example.com", NOW)}
+    finally:
+        conn.close()
+    assert "https://a.example.com" in hosts
+    assert not any("b.example.com/openapi" in h for h in hosts)
+
+
+def test_format_summary_renders_targets_refreshed_before_wall_time():
+    text = format_summary(_summary({"responded": 7}, targets_refreshed=3))
+    assert text == (
+        "probe: 7 probed, 7 responded, 7 working, 0 errors, targets_refreshed: 3, 4312 ms -> "
+        "data/probes/2026-10.parquet, rollups: 3"
+    )

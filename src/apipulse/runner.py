@@ -8,7 +8,17 @@ import httpx
 from apipulse.config import Settings
 from apipulse.prober import Outcome, ProbeResult, probe
 from apipulse.rollup import compute_rollup, empty_rollup
-from apipulse.store import ProbeRow, append_probes, connect, load_apis, read_probes, upsert_rollups
+from apipulse.store import (
+    ProbeRow,
+    append_probes,
+    connect,
+    load_apis,
+    load_probe_targets,
+    read_probes,
+    set_probe_target,
+    upsert_rollups,
+)
+from apipulse.target_selector import TARGET_TTL_DAYS, fetch_spec, select_target
 
 
 @dataclass(frozen=True)
@@ -21,6 +31,7 @@ class RunSummary:
     wall_ms: int
     parquet_path: Path
     rollups: int
+    targets_refreshed: int
 
 
 def run_probes(
@@ -35,6 +46,7 @@ def run_probes(
     conn = connect(settings)
     try:
         apis = load_apis(conn)
+        targets = load_probe_targets(conn)
     finally:
         conn.close()
     probe_clock = (lambda: moment) if now is not None else None
@@ -42,14 +54,26 @@ def run_probes(
     http = httpx.Client(timeout=timeout_s) if client is None else client
     results: list[tuple[str, ProbeResult]] = []
     errors = 0
+    targets_refreshed = 0
+    target_conn = connect(settings)
     try:
         for api in apis:
+            stale_before = moment - timedelta(days=TARGET_TTL_DAYS)
+            if api.spec_url is not None and (
+                api.id not in targets or targets[api.id][1] < stale_before
+            ):
+                spec = fetch_spec(api.spec_url, client=http)
+                target = select_target(spec, api.base_url) if spec is not None else api.base_url
+                set_probe_target(target_conn, api.id, target, selected_at=moment)
+                targets[api.id] = (target, moment)
+                targets_refreshed += 1
+            url = targets[api.id][0] if api.id in targets else api.base_url
             try:
-                result = probe(api.base_url, client=http, timeout_s=timeout_s, now=probe_clock)
+                result = probe(url, client=http, timeout_s=timeout_s, now=probe_clock)
             except Exception as exc:
                 errors += 1
                 result = ProbeResult(
-                    url=api.base_url,
+                    url=url,
                     probed_at=moment,
                     outcome=Outcome.other_error,
                     status=None,
@@ -61,6 +85,7 @@ def run_probes(
                 )
             results.append((api.id, result))
     finally:
+        target_conn.close()
         if owns_client:
             http.close()
     by_outcome: dict[str, int] = {}
@@ -95,6 +120,7 @@ def run_probes(
         wall_ms=int((time.monotonic() - started) * 1000),
         parquet_path=path,
         rollups=len(rollups),
+        targets_refreshed=targets_refreshed,
     )
 
 
@@ -107,6 +133,7 @@ def format_summary(summary: RunSummary) -> str:
     return (
         f"probe: {summary.probed} probed, {summary.responded} responded, "
         f"{summary.working} working, {outcomes}{summary.errors} errors, "
-        f"{summary.wall_ms} ms -> {summary.parquet_path}, "
+        f"targets_refreshed: {summary.targets_refreshed}, {summary.wall_ms} ms -> "
+        f"{summary.parquet_path}, "
         f"rollups: {summary.rollups}"
     )

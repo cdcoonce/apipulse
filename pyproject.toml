@@ -9,6 +9,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pyarrow",
+    "pyyaml",
 ]
 
 [project.scripts]

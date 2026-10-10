@@ -54,7 +54,16 @@ def connect(settings: Settings) -> sqlite3.Connection:
     conn = sqlite3.connect(settings.data_dir / "apipulse.db")
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(apis)")}
+    for column in ("probe_target", "target_selected_at"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE apis ADD COLUMN {column} TEXT")
+    conn.commit()
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,27 @@ def load_apis(conn: sqlite3.Connection, *, active_only: bool = True) -> list[Api
         )
         for row in conn.execute(query)
     ]
+
+
+def load_probe_targets(conn: sqlite3.Connection) -> dict[str, tuple[str, datetime]]:
+    rows = conn.execute(
+        "SELECT id, probe_target, target_selected_at FROM apis"
+        " WHERE probe_target IS NOT NULL AND target_selected_at IS NOT NULL"
+    )
+    return {
+        row["id"]: (row["probe_target"], datetime.fromisoformat(row["target_selected_at"]))
+        for row in rows
+    }
+
+
+def set_probe_target(
+    conn: sqlite3.Connection, api_id: str, target: str, *, selected_at: datetime
+) -> None:
+    conn.execute(
+        "UPDATE apis SET probe_target = ?, target_selected_at = ? WHERE id = ?",
+        (target, _iso(selected_at), api_id),
+    )
+    conn.commit()
 
 
 def record_optouts(
