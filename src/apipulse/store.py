@@ -12,6 +12,7 @@ import pyarrow.parquet as pq
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.prober import ProbeResult
+from apipulse.rollup import Rollup
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS apis (
@@ -31,6 +32,19 @@ CREATE TABLE IF NOT EXISTS apis (
 CREATE TABLE IF NOT EXISTS optouts (
     key TEXT PRIMARY KEY,
     recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rollups (
+    api_id TEXT PRIMARY KEY,
+    reachable_30d INTEGER NOT NULL,
+    working_30d INTEGER NOT NULL,
+    days_observed_30d INTEGER NOT NULL,
+    p50_ms INTEGER,
+    p95_ms INTEGER,
+    last_probe_at TEXT,
+    last_outcome TEXT,
+    last_status INTEGER,
+    probe_target TEXT,
+    computed_at TEXT NOT NULL
 );
 """
 
@@ -142,6 +156,74 @@ def record_optouts(
         [(r.id, _iso(recorded_at)) for r in removed],
     )
     conn.commit()
+
+
+_ROLLUP_COLUMNS = (
+    "api_id",
+    "reachable_30d",
+    "working_30d",
+    "days_observed_30d",
+    "p50_ms",
+    "p95_ms",
+    "last_probe_at",
+    "last_outcome",
+    "last_status",
+    "probe_target",
+)
+
+
+def upsert_rollups(
+    conn: sqlite3.Connection, rollups: list[Rollup], *, computed_at: datetime
+) -> None:
+    columns = ", ".join((*_ROLLUP_COLUMNS, "computed_at"))
+    marks = ", ".join("?" for _ in range(len(_ROLLUP_COLUMNS) + 1))
+    updates = ", ".join(f"{c}=excluded.{c}" for c in (*_ROLLUP_COLUMNS[1:], "computed_at"))
+    conn.executemany(
+        f"INSERT INTO rollups ({columns}) VALUES ({marks})"
+        f" ON CONFLICT(api_id) DO UPDATE SET {updates}",
+        [
+            (
+                r.api_id,
+                r.reachable_30d,
+                r.working_30d,
+                r.days_observed_30d,
+                r.p50_ms,
+                r.p95_ms,
+                _iso(r.last_probe_at) if r.last_probe_at else None,
+                r.last_outcome,
+                r.last_status,
+                r.probe_target,
+                _iso(computed_at),
+            )
+            for r in rollups
+        ],
+    )
+    conn.commit()
+
+
+def _rollup_from_row(row: sqlite3.Row) -> Rollup:
+    stamp = row["last_probe_at"]
+    return Rollup(
+        api_id=row["api_id"],
+        reachable_30d=row["reachable_30d"],
+        working_30d=row["working_30d"],
+        days_observed_30d=row["days_observed_30d"],
+        p50_ms=row["p50_ms"],
+        p95_ms=row["p95_ms"],
+        last_probe_at=datetime.fromisoformat(stamp) if stamp else None,
+        last_outcome=row["last_outcome"],
+        last_status=row["last_status"],
+        probe_target=row["probe_target"],
+    )
+
+
+def load_rollup(conn: sqlite3.Connection, api_id: str) -> Rollup | None:
+    row = conn.execute("SELECT * FROM rollups WHERE api_id = ?", (api_id,)).fetchone()
+    return _rollup_from_row(row) if row else None
+
+
+def load_rollups(conn: sqlite3.Connection) -> list[Rollup]:
+    return [_rollup_from_row(r) for r in conn.execute("SELECT * FROM rollups ORDER BY api_id")]
 
 
 PROBES_SCHEMA = pa.schema(
