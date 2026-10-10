@@ -11,6 +11,8 @@ apipulse is a live-probe quality index for public APIs: it probes one representa
 
 Every command accepts `--data-dir PATH`. The data directory defaults to `./data` and can also be set with the `APIPULSE_DATA_DIR` environment variable (the flag wins).
 
+Search uses SQLite FTS5 when the bundled SQLite has it, and falls back to substring matching otherwise.
+
 ## Project page
 
 What apipulse sends, how often, and how to opt out: to be written.
