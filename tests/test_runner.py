@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -8,7 +8,7 @@ from apipulse import runner
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.runner import RunSummary, format_summary, run_probes
-from apipulse.store import connect, upsert_apis
+from apipulse.store import connect, load_rollup, upsert_apis
 
 NOW = datetime(2026, 10, 10, tzinfo=UTC)
 
@@ -97,6 +97,7 @@ def _summary(by_outcome: dict[str, int], **kw) -> RunSummary:
         errors=0,
         wall_ms=4312,
         parquet_path=Path("data/probes/2026-10.parquet"),
+        rollups=3,
     )
     return RunSummary(**{**base, **kw})
 
@@ -105,13 +106,14 @@ def test_format_summary_lists_non_responded_outcomes_in_enum_order():
     text = format_summary(_summary({"responded": 5, "dns_failure": 2, "timeout": 1}))
     assert text == (
         "probe: 8 probed, 5 responded, 5 working, timeout=1, dns_failure=2, "
-        "0 errors, 4312 ms -> data/probes/2026-10.parquet"
+        "0 errors, 4312 ms -> data/probes/2026-10.parquet, rollups: 3"
     )
 
 
 def test_format_summary_omits_outcomes_segment_when_all_responded():
     assert format_summary(_summary({"responded": 7})) == (
-        "probe: 7 probed, 7 responded, 7 working, 0 errors, 4312 ms -> data/probes/2026-10.parquet"
+        "probe: 7 probed, 7 responded, 7 working, 0 errors, 4312 ms -> "
+        "data/probes/2026-10.parquet, rollups: 3"
     )
 
 
@@ -139,3 +141,36 @@ def test_run_probes_counts_a_raising_probe_as_other_error(tmp_path, monkeypatch)
     assert rows["b"]["outcome"] == "other_error"
     assert rows["b"]["error"] == "boom"
     assert rows["b"]["probed_at"] == NOW
+
+
+def test_run_probes_upserts_a_rollup_for_every_active_api(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a", "b", "c"])
+    summary = run_probes(settings, client=_client(lambda r: httpx.Response(200)), now=NOW)
+    assert summary.rollups == 3
+    conn = connect(settings)
+    try:
+        a = load_rollup(conn, "a")
+    finally:
+        conn.close()
+    assert a is not None
+    assert (a.reachable_30d, a.working_30d, a.days_observed_30d) == (1, 1, 1)
+    assert a.probe_target == "https://a.example.com"
+
+
+def test_run_probes_does_not_recompute_inactive_apis(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a", "b"])
+    client = _client(lambda r: httpx.Response(200))
+    run_probes(settings, client=client, now=NOW)
+    _seed(settings, ["a"])
+    later = NOW + timedelta(days=1)
+    summary = run_probes(settings, client=client, now=later)
+    assert summary.rollups == 1
+    conn = connect(settings)
+    try:
+        a, b = load_rollup(conn, "a"), load_rollup(conn, "b")
+    finally:
+        conn.close()
+    assert a is not None and a.days_observed_30d == 2
+    assert b is not None and b.days_observed_30d == 1

@@ -1,13 +1,14 @@
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 
 from apipulse.config import Settings
 from apipulse.prober import Outcome, ProbeResult, probe
-from apipulse.store import append_probes, connect, load_apis
+from apipulse.rollup import compute_rollup, empty_rollup
+from apipulse.store import ProbeRow, append_probes, connect, load_apis, read_probes, upsert_rollups
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class RunSummary:
     errors: int
     wall_ms: int
     parquet_path: Path
+    rollups: int
 
 
 def run_probes(
@@ -35,6 +37,7 @@ def run_probes(
         apis = load_apis(conn)
     finally:
         conn.close()
+    probe_clock = (lambda: moment) if now is not None else None
     owns_client = client is None
     http = httpx.Client(timeout=timeout_s) if client is None else client
     results: list[tuple[str, ProbeResult]] = []
@@ -42,7 +45,7 @@ def run_probes(
     try:
         for api in apis:
             try:
-                result = probe(api.base_url, client=http, timeout_s=timeout_s)
+                result = probe(api.base_url, client=http, timeout_s=timeout_s, now=probe_clock)
             except Exception as exc:
                 errors += 1
                 result = ProbeResult(
@@ -66,6 +69,23 @@ def run_probes(
     responded = [r for _, r in results if r.outcome == Outcome.responded]
     working = [r for r in responded if r.status is not None and 200 <= r.status < 300]
     path = append_probes(settings, results, now=moment)
+    history = read_probes(settings, since=moment - timedelta(days=31))
+    by_api: dict[str, list[ProbeRow]] = {}
+    for row in history:
+        by_api.setdefault(row.api_id, []).append(row)
+    # Probes fire after `moment` in real runs; the window must include them.
+    rollup_now = max([moment, *(r.probed_at for _, r in results)])
+    rollups = [
+        compute_rollup(api.id, by_api[api.id], now=rollup_now)
+        if api.id in by_api
+        else empty_rollup(api.id)
+        for api in apis
+    ]
+    conn = connect(settings)
+    try:
+        upsert_rollups(conn, rollups, computed_at=moment)
+    finally:
+        conn.close()
     return RunSummary(
         probed=len(results),
         responded=len(responded),
@@ -74,6 +94,7 @@ def run_probes(
         errors=errors,
         wall_ms=int((time.monotonic() - started) * 1000),
         parquet_path=path,
+        rollups=len(rollups),
     )
 
 
@@ -86,5 +107,6 @@ def format_summary(summary: RunSummary) -> str:
     return (
         f"probe: {summary.probed} probed, {summary.responded} responded, "
         f"{summary.working} working, {outcomes}{summary.errors} errors, "
-        f"{summary.wall_ms} ms -> {summary.parquet_path}"
+        f"{summary.wall_ms} ms -> {summary.parquet_path}, "
+        f"rollups: {summary.rollups}"
     )

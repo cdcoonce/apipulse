@@ -96,4 +96,6 @@ def test_probe_runs_against_inventory_and_prints_summary(tmp_path, capsys, monke
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 1
     assert lines[0].startswith("probe: 2 probed, 2 responded, 2 working, 0 errors,")
-    assert re.search(rf"-> {re.escape(str(tmp_path))}/probes/\d{{4}}-\d{{2}}\.parquet$", lines[0])
+    assert re.search(
+        rf"-> {re.escape(str(tmp_path))}/probes/\d{{4}}-\d{{2}}\.parquet, rollups: 2$", lines[0]
+    )
