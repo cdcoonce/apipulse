@@ -35,9 +35,11 @@ def test_fewest_segments_beats_deeper_paths():
     spec = {
         "openapi": "3.0.0",
         "servers": [{"url": "https://api.example.com"}],
-        "paths": {"/v1/users/list": {"get": {}}, "/items": {"get": {}}},
+        # Two segments but shorter string vs one segment but longer string:
+        # segment count must win over path length.
+        "paths": {"/a/b": {"get": {}}, "/inventory-items": {"get": {}}},
     }
-    assert select_target(spec, BASE) == "https://api.example.com/items"
+    assert select_target(spec, BASE) == "https://api.example.com/inventory-items"
 
 
 def test_only_parameterized_operations_fall_back_to_base_url():
@@ -78,7 +80,9 @@ def test_required_header_on_path_level_params_excludes_a_path():
         "openapi": "3.0.0",
         "servers": [{"url": "https://api.example.com/"}],
         "paths": {
-            "/secure": {
+            # Would score 0 (cheap suffix) and win outright if the required
+            # path-level header were ignored.
+            "/health": {
                 "parameters": [{"name": "X-Key", "in": "header", "required": True}],
                 "get": {},
             },
