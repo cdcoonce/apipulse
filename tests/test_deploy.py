@@ -244,7 +244,16 @@ def test_cron_probe_runs_render_only_after_probe_inside_the_same_flock():
 def test_cron_appends_stdout_and_stderr_to_a_per_job_log_in_the_state_dir():
     state = "/home/cdcoonce/.local/state/apipulse"
     for job, (_, command) in _cron_entries().items():
-        assert command.rstrip().endswith(f">> {state}/{job}.log 2>&1"), job
+        assert f"flock -w 3600 {state}/run.lock /bin/sh -c '" in command, job
+        assert f"' >> {state}/{job}.log 2>&1 ||" in command, job
+
+
+def test_cron_lines_leave_a_timestamped_trace_and_log_a_failure_in_their_own_log():
+    state = "/home/cdcoonce/.local/state/apipulse"
+    for job, (_, command) in _cron_entries().items():
+        log = f"{state}/{job}.log"
+        assert command.startswith(f"date -Is >> {log}; APIPULSE_DATA_DIR="), job
+        assert command.rstrip().endswith(f'|| echo "apipulse {job} failed: exit $?" >> {log}'), job
 
 
 def test_cron_file_has_no_percent_signs_and_explains_the_early_schedule():
@@ -397,3 +406,148 @@ def test_runbook_mentions(needle):
 
 def test_verify_script_is_executable():
     assert os.access(VERIFY, os.X_OK)
+
+
+def test_verify_run_accepts_a_relative_data_dir_argument(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    parquet = _make_data_dir(data, rollups=2)
+    env = {**os.environ, "PYTHON": sys.executable}
+    env.pop("APIPULSE_DATA_DIR", None)
+    result = subprocess.run(
+        ["bash", str(VERIFY), "data"],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert parquet.name in result.stdout
+    assert "rollups: 2" in result.stdout
+
+
+def test_verify_run_exits_four_not_one_on_an_unexpected_error(tmp_path):
+    parquet = _make_data_dir(tmp_path)
+    parquet.write_bytes(b"not a parquet file")  # fresh mtime, unreadable content
+    result = _verify(tmp_path)
+    assert result.returncode == 4
+    assert "error" in result.stderr.lower()
+    assert "stale" not in result.stderr.lower()
+
+
+def test_verify_run_exits_three_when_the_site_is_two_hours_older_than_the_probe(tmp_path):
+    parquet = _make_data_dir(tmp_path)
+    _age(tmp_path / "site" / "index.html", 2)  # parquet is fresh, render did not follow it
+    result = _verify(tmp_path)
+    assert result.returncode == 3
+    assert "RENDER STALE: site/index.html is older than the latest probe" in result.stderr
+    assert parquet.name in result.stdout
+
+
+def test_verify_run_tolerates_a_site_30_minutes_older_than_the_probe(tmp_path):
+    _make_data_dir(tmp_path)
+    _age(tmp_path / "site" / "index.html", 0.5)
+    assert _verify(tmp_path).returncode == 0
+
+
+def test_verify_run_reports_stale_parquet_ahead_of_a_stale_render(tmp_path):
+    parquet = _make_data_dir(tmp_path)
+    _age(parquet, 37)
+    _age(tmp_path / "site" / "index.html", 40)
+    result = _verify(tmp_path)
+    assert result.returncode == 1
+    assert "RENDER STALE" not in result.stderr
+
+
+def _runbook() -> str:
+    return RUNBOOK.read_text()
+
+
+def test_runbook_labels_every_shell_block_with_where_it_runs():
+    lines = _runbook().splitlines()
+    blocks = [i for i, line in enumerate(lines) if line.startswith("```sh")]
+    assert len(blocks) >= 8
+    for i in blocks:
+        label = next(lines[k] for k in range(i - 1, -1, -1) if lines[k].strip())
+        assert re.search(r"\*\*On (your Mac|rammingspeed)[^*]*\*\*", label), (i, label)
+
+
+def test_runbook_says_it_applies_after_the_merge_to_main():
+    text = _runbook()
+    assert "merged to `main`" in text
+    assert "git clone https://github.com/cdcoonce/apipulse" in text
+
+
+def test_runbook_tags_locally_before_installing_and_before_every_pull():
+    text = _runbook()
+    assert 'git tag "deploy-$(date +%F)"' in text
+    assert "git push origin deploy" not in text
+    assert "git tag -l 'deploy-*'" in text
+    assert "no GitHub credentials" in text
+    pull_section = text[text.index("## 6.") : text.index("## 7.")]
+    assert pull_section.index("git tag") < pull_section.index("git pull --ff-only")
+
+
+def test_runbook_first_run_is_backgrounded_under_the_cron_lock_and_gates_the_schedule():
+    text = _runbook()
+    assert "nohup" in text
+    assert "first-probe.log" in text
+    assert "flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock" in text
+    assert "more than 3 hours" in text
+    assert "Charles" in text
+    assert text.index("first-probe.log") < text.index("(crontab -l 2>/dev/null; cat")
+
+
+def test_runbook_cron_install_is_guarded_against_duplicates():
+    text = _runbook()
+    assert (
+        "crontab -l 2>/dev/null | grep -q 'apipulse' && echo 'apipulse already in crontab; "
+        "not appending' || (crontab -l 2>/dev/null; cat deploy/cron/apipulse.cron) | crontab -"
+    ) in text
+    assert "double-probe" in text
+
+
+def test_runbook_enables_linger_before_the_service_and_waits_before_curl():
+    text = _runbook()
+    assert text.index("sudo loginctl enable-linger cdcoonce") < text.index(
+        "systemctl --user enable --now apipulse-serve"
+    )
+    assert text.index("systemctl --user enable --now apipulse-serve") < text.index("sleep 5")
+    assert "journalctl --user -u apipulse-serve -n 50" in text
+
+
+def test_runbook_verify_passes_the_data_dir_and_documents_every_exit_code():
+    text = _runbook()
+    assert "scripts/verify_run.sh /home/cdcoonce/src/apipulse/data" in text
+    for code in ("`0`", "`1`", "`2`", "`3`", "`4`"):
+        assert code in text
+    assert "RENDER STALE" in text
+    assert "under about 10 hours" in text
+    assert "ls -l ~/.local/state/apipulse/" in text
+    assert 'grep -n "$(date +%F)" ~/.local/state/apipulse/probe.log' in text
+    assert "refresh.log" in text
+
+
+def test_runbook_rollback_changes_code_only_and_checks_the_optout_list_first():
+    text = _runbook()
+    section = text[text.index("## 7.") :]
+    assert "git -C ~/src/apipulse diff deploy-" in section
+    assert "data/optout.json" in section
+    assert "fix forward" in section
+    assert "systemctl --user restart apipulse-serve" in section
+    assert "code only" in section.lower()
+    assert section.index("diff") < section.index("checkout deploy-")
+
+
+def test_runbook_says_the_maintainer_makes_the_preflight_decisions():
+    text = _runbook()
+    section = text[text.index("## 1.") : text.index("## 2.")]
+    assert "Charles" in section
+    assert "maintainer" in section
+
+
+def test_runbook_explains_that_errors_counts_exceptions_not_transport_failures():
+    text = _runbook()
+    assert "exceptions inside apipulse" in text
+    assert "transport failures" in text

@@ -11,11 +11,13 @@
 # committed seed.json and optout.json), take one shared flock so refresh and probe never write
 # SQLite at the same time, call uv by absolute path (cron's PATH is minimal), and append
 # stdout and stderr to a per-job log. The probe line runs render only if probe succeeded.
+# Each line first writes a timestamp (date -Is) to its log, and a failure or a flock timeout
+# appends an "apipulse <job> failed: exit N" line, so a bad night is visible in the log.
 # No percent signs anywhere in this file: cron treats an unescaped one as a newline.
 # The state dir must exist first: mkdir -p /home/cdcoonce/.local/state/apipulse
 
 # Weekly inventory refresh, Sunday 00:30.
-30 0 * * 0 APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse refresh-inventory' >> /home/cdcoonce/.local/state/apipulse/refresh.log 2>&1
+30 0 * * 0 date -Is >> /home/cdcoonce/.local/state/apipulse/refresh.log; APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse refresh-inventory' >> /home/cdcoonce/.local/state/apipulse/refresh.log 2>&1 || echo "apipulse refresh failed: exit $?" >> /home/cdcoonce/.local/state/apipulse/refresh.log
 
 # Daily probe then render, 01:00.
-0 1 * * * APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse probe && /home/cdcoonce/.local/bin/uv run --frozen apipulse render' >> /home/cdcoonce/.local/state/apipulse/probe.log 2>&1
+0 1 * * * date -Is >> /home/cdcoonce/.local/state/apipulse/probe.log; APIPULSE_DATA_DIR=/home/cdcoonce/src/apipulse/data flock -w 3600 /home/cdcoonce/.local/state/apipulse/run.lock /bin/sh -c 'cd /home/cdcoonce/src/apipulse && /home/cdcoonce/.local/bin/uv run --frozen apipulse probe && /home/cdcoonce/.local/bin/uv run --frozen apipulse render' >> /home/cdcoonce/.local/state/apipulse/probe.log 2>&1 || echo "apipulse probe failed: exit $?" >> /home/cdcoonce/.local/state/apipulse/probe.log
