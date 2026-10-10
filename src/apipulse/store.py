@@ -290,3 +290,21 @@ def read_probes(settings: Settings, *, since: datetime) -> list[ProbeRow]:
             continue
         rows.extend(ProbeRow(**raw) for raw in pq.read_table(path).to_pylist())
     return sorted((r for r in rows if r.probed_at >= since), key=lambda r: r.probed_at)
+
+
+def load_api(conn: sqlite3.Connection, api_id: str) -> tuple[ApiRecord, bool] | None:
+    row = conn.execute("SELECT * FROM apis WHERE id = ?", (api_id,)).fetchone()
+    if row is None:
+        return None
+    record = ApiRecord(
+        id=row["id"],
+        name=row["name"],
+        description=row["description"],
+        tags=tuple(json.loads(row["tags"])),
+        base_url=row["base_url"],
+        spec_url=row["spec_url"],
+        declared_auth=row["declared_auth"],
+        signup_url=row["signup_url"],
+        source=row["source"],
+    )
+    return record, bool(row["active"])
