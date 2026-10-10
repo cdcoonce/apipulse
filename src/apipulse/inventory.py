@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -118,6 +119,61 @@ def fetch_apis_guru(client: httpx.Client | None = None) -> dict:
         response = http.get(APIS_GURU_INDEX_URL, headers={"User-Agent": USER_AGENT})
         response.raise_for_status()
         return response.json()
+    finally:
+        if owned:
+            http.close()
+
+
+PUBLIC_APIS_README_URL = (
+    "https://raw.githubusercontent.com/public-apis/public-apis/master/README.md"
+)
+
+_LINK = re.compile(r"^\[(?P<text>.*)\]\((?P<url>[^)\s]+)\)$")
+
+
+def parse_public_apis(markdown: str) -> list[ApiRecord]:
+    records: list[ApiRecord] = []
+    category = ""
+    for line in markdown.splitlines():
+        if line.startswith("### "):
+            category = line[4:].strip()
+            continue
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) < 3:
+            continue
+        match = _LINK.match(cells[0])
+        if match is None:
+            continue
+        url = match["url"]
+        if not url.startswith(("http://", "https://")):
+            continue
+        parts = urlsplit(url)
+        auth = cells[2].replace("`", "").strip()
+        records.append(
+            ApiRecord(
+                id=host_of(url),
+                name=match["text"].strip("*_ ") or url,
+                description=cells[1],
+                tags=(category.lower(),) if category else (),
+                base_url=f"{parts.scheme}://{(parts.hostname or '').lower()}",
+                spec_url=None,
+                declared_auth=None if not auth or auth.lower() == "no" else auth,
+                signup_url=url,
+                source="public-apis",
+            )
+        )
+    return records
+
+
+def fetch_public_apis(client: httpx.Client | None = None) -> str:
+    owned = client is None
+    http = httpx.Client() if client is None else client
+    try:
+        response = http.get(PUBLIC_APIS_README_URL, headers={"User-Agent": USER_AGENT})
+        response.raise_for_status()
+        return response.text
     finally:
         if owned:
             http.close()

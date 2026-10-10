@@ -96,15 +96,20 @@ def test_refresh_inventory_runs_against_data_dir(tmp_path, capsys):
     assert first == "inventory: seed=1 -> 1 active, 0 removed (opt-out), 0 deactivated"
 
 
-def test_refresh_inventory_defaults_to_seed_and_apis_guru(tmp_path, capsys, monkeypatch):
+def test_refresh_inventory_defaults_to_all_three_sources(tmp_path, capsys, monkeypatch):
     _write_one_seed(tmp_path)
-    fixture = json.loads((Path(__file__).parent / "fixtures" / "apis_guru_list.json").read_text())
+    fixtures = Path(__file__).parent / "fixtures"
+    guru = json.loads((fixtures / "apis_guru_list.json").read_text())
+    readme = (fixtures / "public_apis_readme.md").read_text()
     monkeypatch.setattr(
-        "apipulse.commands.refresh_inventory.fetch_apis_guru", lambda client=None: fixture
+        "apipulse.commands.refresh_inventory.fetch_apis_guru", lambda client=None: guru
+    )
+    monkeypatch.setattr(
+        "apipulse.commands.refresh_inventory.fetch_public_apis", lambda client=None: readme
     )
     assert main(["refresh-inventory", "--data-dir", str(tmp_path)]) == 0
     first = capsys.readouterr().out.splitlines()[0]
-    assert first.startswith("inventory: seed=1 apis.guru=6 ->")
+    assert first.startswith("inventory: seed=1 apis.guru=6 public-apis=6 ->")
 
 
 def test_probe_runs_against_inventory_and_prints_summary(tmp_path, capsys, monkeypatch):

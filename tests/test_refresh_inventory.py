@@ -7,6 +7,7 @@ import pytest
 
 from apipulse.commands.refresh_inventory import run
 from apipulse.config import Settings
+from apipulse.inventory import APIS_GURU_INDEX_URL, PUBLIC_APIS_README_URL
 from apipulse.store import connect
 
 FIXTURE = Path(__file__).parent / "fixtures" / "apis_guru_list.json"
@@ -119,3 +120,55 @@ def test_seed_only_and_invalid_source_lists(tmp_path):
     for bad in ("seed,,apis.guru", "nope", ""):
         with pytest.raises(ValueError):
             run(settings, source=bad, client=_guru_client())
+
+
+README_FIXTURE = Path(__file__).parent / "fixtures" / "public_apis_readme.md"
+
+
+def _both_client() -> httpx.Client:
+    def handler(request):
+        if str(request.url) == APIS_GURU_INDEX_URL:
+            return httpx.Response(200, json=json.loads(FIXTURE.read_text()))
+        if str(request.url) == PUBLIC_APIS_README_URL:
+            return httpx.Response(200, text=README_FIXTURE.read_text())
+        return httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _setup_zippo(tmp_path: Path) -> Settings:
+    (tmp_path / "seed.json").write_text(
+        json.dumps(
+            [{"id": "api.zippopotam.us", "name": "Zippo", "base_url": "https://api.zippopotam.us"}]
+        )
+    )
+    (tmp_path / "optout.json").write_text("[]")
+    return Settings(data_dir=tmp_path)
+
+
+def test_three_sources_collapse_shared_host_and_earlier_source_wins(tmp_path):
+    settings = _setup_zippo(tmp_path)
+    line = run(settings, source="seed,apis.guru,public-apis", client=_both_client())
+    # 1 seed + 6 apis.guru + 6 public-apis = 13 raw; httpbin.org is in both apis.guru and
+    # public-apis, so it collapses once: 13 - 1 = 12 active.
+    assert line == (
+        "inventory: seed=1 apis.guru=6 public-apis=6 -> 12 active, 0 removed (opt-out), "
+        "0 deactivated"
+    )
+    sources = _sources(settings)
+    assert sources["httpbin.org"] == "apis.guru"
+    assert sources["weatherbit.io"] == "public-apis"
+
+
+def test_public_apis_first_wins_host_collision(tmp_path):
+    settings = _setup_zippo(tmp_path)
+    run(settings, source="public-apis,apis.guru", client=_both_client())
+    assert _sources(settings)["httpbin.org"] == "public-apis"
+
+
+def test_public_apis_only_host_has_no_spec_and_probes_base_url(tmp_path):
+    settings = _setup_zippo(tmp_path)
+    run(settings, source="public-apis", client=_both_client())
+    row = connect(settings).execute("SELECT * FROM apis WHERE id = 'weatherbit.io'").fetchone()
+    assert row["spec_url"] is None
+    assert row["base_url"] == "https://www.weatherbit.io"  # scheme + host as listed; id drops www

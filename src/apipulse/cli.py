@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
         command_parser = sub.add_parser(name)
         command_parser.add_argument("--data-dir", type=Path, default=None)
         if name == "refresh-inventory":
-            command_parser.add_argument("--source", default="seed,apis.guru")
+            command_parser.add_argument("--source", default="seed,apis.guru,public-apis")
         if name == "serve":
             command_parser.add_argument("--host", default="127.0.0.1")
             command_parser.add_argument("--port", type=int, default=8080)
