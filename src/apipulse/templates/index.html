@@ -9,7 +9,7 @@
 </div>
 
 <section id="verified">
-<div class="sec-head"><h2>Works without a key <span class="n">{{ verified | length }}</span></h2>{% if verified %}<span class="sub">{{ verified | length }} APIs answered a documented endpoint with no key on every day probed</span>{% endif %}</div>
+<div class="sec-head"><h2>Works without a key</h2>{% if verified %}<span class="sub">{{ verified | length }} APIs answered a documented endpoint with no key on every day probed</span>{% endif %}</div>
 {% if verified %}
 <div class="grid">
 {% for a in verified[:12] %}
@@ -40,7 +40,7 @@
 </select>
 <label><input type="checkbox" id="ep"> Endpoint-probed only</label>
 </div>
-<p class="count" id="count">Showing {{ rows | length }} of {{ rows | length }}</p>
+<p class="count" id="count">Showing {{ "{:,}".format(rows | length) }} of {{ "{:,}".format(rows | length) }}</p>
 <table id="apis">
 <thead><tr><th>API</th><th class="hide-sm">Category</th><th>Last 31 days</th><th class="hide-sm" style="text-align:right">Median</th><th>Auth</th></tr></thead>
 <tbody id="rows">
@@ -125,6 +125,7 @@ function filterApis(apis, state) {
   var count = document.getElementById("count");
   var more = document.getElementById("more");
   var empty = document.getElementById("empty");
+  var number = new Intl.NumberFormat("en-US");
   var matches = apis;
   var shown = PAGE_SIZE;
 
@@ -194,7 +195,8 @@ function filterApis(apis, state) {
   function draw() {
     body.textContent = "";
     matches.slice(0, shown).forEach(function (api) { body.appendChild(buildRow(api)); });
-    count.textContent = "Showing " + Math.min(shown, matches.length) + " of " + matches.length;
+    count.textContent = "Showing " + number.format(Math.min(shown, matches.length)) +
+      " of " + number.format(matches.length);
     more.hidden = shown >= matches.length;
     empty.hidden = matches.length > 0;
   }
