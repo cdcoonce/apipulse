@@ -9,7 +9,7 @@
 </div>
 
 <section id="verified">
-<div class="sec-head"><h2>Works without a key</h2>{% if verified %}<span class="sub">{{ verified | length }} APIs answered a documented endpoint with no key on every day probed</span>{% endif %}</div>
+<div class="sec-head"><h2>Works without a key</h2>{% if verified %}<span class="sub">{{ "{:,}".format(verified | length) }} APIs answered a documented endpoint with no key on every day probed</span>{% endif %}</div>
 {% if verified %}
 <div class="grid">
 {% for a in verified[:12] %}
@@ -17,7 +17,7 @@
 {% endfor %}
 </div>
 {% if verified | length > 12 %}
-<details class="more"><summary>Show all {{ verified | length }}</summary><div class="grid">
+<details class="more"><summary>Show all {{ "{:,}".format(verified | length) }}</summary><div class="grid">
 {% for a in verified[12:] %}
 {{ card(a) }}
 {% endfor %}
@@ -35,7 +35,7 @@
 <select id="status" aria-label="Status"><option value="">Any status</option><option value="W">Worked last probe</option><option value="R">Answered, not OK</option><option value="D">No answer</option></select>
 <select id="cat" aria-label="Category"><option value="">All categories</option>
 {% for name, n in categories %}
-<option value="{{ name }}">{{ name }} ({{ n }})</option>
+<option value="{{ name }}">{{ name }} ({{ "{:,}".format(n) }})</option>
 {% endfor %}
 </select>
 <label><input type="checkbox" id="ep"> Endpoint-probed only</label>
