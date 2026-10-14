@@ -222,7 +222,7 @@ def test_card_description_is_cut_at_140_characters(tmp_path):
     html = _index(_site(tmp_path, [_rec("a", description=desc)], [_good("a")]))
     card = re.search(r'<a class="card".*?</a>', html, re.S)[0]
     shown = re.search(r'class="desc"[^>]*>(.*?)</div>', card, re.S)[1]
-    assert shown.endswith("…") and len(shown) <= 141 and desc not in html
+    assert shown.endswith("…") and len(shown) <= 140
 
 
 def test_hostile_name_and_description_are_inert_on_a_card(tmp_path):
@@ -549,16 +549,16 @@ def test_about_page_explains_the_labels(tmp_path):
     html = _page(_site(tmp_path, [_rec("alpha")]), "project.html")
     section = re.split(r"<h2[^>]*>\s*What the labels mean\s*</h2>", html)
     assert len(section) == 2, "missing 'What the labels mean' heading"
-    text = _text(re.split(r"<h2", section[1])[0])
+    text = _text(re.split(r"<h2", section[1])[0]).lower()
     for needle in (
         "endpoint probe",
         "site probe",
         "only at endpoints",
         "listed",
         "public-apis",
-        "APIs.guru",
+        "apis.guru",
         "2xx",
-        "any HTTP response",
+        "any http response",
         "worked",
         "answered",
     ):

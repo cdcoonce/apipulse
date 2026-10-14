@@ -1,28 +1,66 @@
 {% extends "base.html" %}
-{% block title %}apipulse{% endblock %}
+{% from "_ui.html" import card, strip, legend, ms, auth_cell %}
+{% set current = "apis" %}
+{% block title %}apipulse — which public APIs actually work{% endblock %}
 {% block body %}
-<h1>apipulse</h1>
-<p>A live-probe quality index for public APIs. <a href="project.html">What is probed and how to opt out</a>.</p>
-<input type="search" id="q" placeholder="Search name, description and tags" aria-label="Search APIs" autocomplete="off">
+<div class="hero">
+<h1>Which public APIs actually work today?</h1>
+<p>apipulse sends one plain GET to each of {{ "{:,}".format(rows | length) }} public APIs every day and records what answers. {{ observed_days }} days of history so far; strips fill in as days accrue.</p>
+</div>
+
+<section id="verified">
+<div class="sec-head"><h2>Works without a key <span class="n">{{ verified | length }}</span></h2>{% if verified %}<span class="sub">{{ verified | length }} APIs answered a documented endpoint with no key on every day probed</span>{% endif %}</div>
+{% if verified %}
+<div class="grid">
+{% for a in verified[:12] %}
+{{ card(a) }}
+{% endfor %}
+</div>
+{% if verified | length > 12 %}
+<details class="more"><summary>Show all {{ verified | length }}</summary><div class="grid">
+{% for a in verified[12:] %}
+{{ card(a) }}
+{% endfor %}
+</div></details>
+{% endif %}
+{% else %}
+<p class="empty">No API qualifies yet: it needs an endpoint probe that answered with no key on every day probed.</p>
+{% endif %}
+</section>
+
+<section id="directory">
+<div class="sec-head"><h2>All APIs</h2>{{ legend() }}</div>
+<div class="controls">
+<input type="search" id="q" placeholder="Search {{ '{:,}'.format(rows | length) }} APIs by name, description or category" aria-label="Search APIs" autocomplete="off">
+<select id="status" aria-label="Status"><option value="">Any status</option><option value="W">Worked last probe</option><option value="R">Answered, not OK</option><option value="D">No answer</option></select>
+<select id="cat" aria-label="Category"><option value="">All categories</option>
+{% for name, n in categories %}
+<option value="{{ name }}">{{ name }} ({{ n }})</option>
+{% endfor %}
+</select>
+<label><input type="checkbox" id="ep"> Endpoint-probed only</label>
+</div>
+<p class="count" id="count">Showing {{ rows | length }} of {{ rows | length }}</p>
 <table id="apis">
-<thead>
-<tr><th>id</th><th>name</th><th>reachable 30d</th><th>working 30d</th><th>p50 ms</th><th>auth</th><th>last probe</th></tr>
-</thead>
+<thead><tr><th>API</th><th class="hide-sm">Category</th><th>Last 31 days</th><th class="hide-sm" style="text-align:right">Median</th><th>Auth</th></tr></thead>
 <tbody id="rows">
 {% for row in rows %}
 <tr{% if not row.active %} class="inactive"{% endif %}>
-<td><a href="apis/{{ row.id }}.html">{{ row.id }}</a></td>
-<td>{{ row.name }}</td>
-<td>{{ row.reachable_30d }}</td>
-<td>{{ row.working_30d }}</td>
-<td>{{ row.p50_ms if row.p50_ms is not none else "—" }}</td>
-<td>{{ row.auth }}</td>
-<td>{{ row.last_probe_at[:10] if row.last_probe_at else "—" }}</td>
+<td class="api{% if row.days.rstrip('.')[-1:] == 'D' %} dead{% endif %}"><a href="apis/{{ row.id }}.html"><div class="nm">{{ row.name }}</div></a>
+<div class="id">{{ row.id }}</div></td>
+<td class="cat hide-sm">{{ row.categories | join(", ") }}</td>
+<td class="days-cell">{{ strip(row.days) }}<span class="days">{{ row.working_30d }}/{{ row.days_observed_30d }}</span></td>
+<td class="num hide-sm">{{ ms(row.p50_ms) }}</td>
+{{ auth_cell(row) }}
 </tr>
 {% endfor %}
 </tbody>
 </table>
-<p id="empty" hidden>No APIs match.</p>
+<p class="empty" id="empty" hidden>No APIs match.</p>
+<div class="more-rows"><button type="button" id="more" hidden>Show more</button></div>
+</section>
+{% endblock %}
+{% block script %}
 <script type="application/json" id="apis-data">{{ apis_json }}</script>
 <script>
 // BEGIN rankApis
@@ -62,42 +100,125 @@ function rankApis(apis, query) {
 }
 // END rankApis
 
-function buildRow(api) {
-  var tr = document.createElement("tr");
-  if (!api.active) { tr.className = "inactive"; }
-  var link = document.createElement("a");
-  link.href = "apis/" + encodeURIComponent(api.id) + ".html";
-  link.textContent = api.id;
-  var first = document.createElement("td");
-  first.appendChild(link);
-  tr.appendChild(first);
-  var cells = [
-    api.name,
-    String(api.reachable_30d),
-    String(api.working_30d),
-    api.p50_ms === null ? "—" : String(api.p50_ms),
-    api.auth,
-    api.last_probe_at ? api.last_probe_at.slice(0, 10) : "—"
-  ];
-  cells.forEach(function (text) {
-    var td = document.createElement("td");
-    td.textContent = text;
-    tr.appendChild(td);
+// BEGIN filterApis
+function filterApis(apis, state) {
+  var status = (state && state.status) || "";
+  var category = (state && state.category) || "";
+  var endpointOnly = Boolean(state && state.endpointOnly);
+  return apis.filter(function (api) {
+    if (status && String(api.days || "").replace(/\.+$/, "").slice(-1) !== status) { return false; }
+    if (category && (api.categories || []).indexOf(category) === -1) { return false; }
+    if (endpointOnly && api.probe_depth !== "endpoint") { return false; }
+    return true;
   });
-  return tr;
 }
+// END filterApis
 
 (function () {
+  var PAGE_SIZE = 100;
   var apis = JSON.parse(document.getElementById("apis-data").textContent);
-  var input = document.getElementById("q");
+  var query = document.getElementById("q");
+  var statusSelect = document.getElementById("status");
+  var categorySelect = document.getElementById("cat");
+  var endpointBox = document.getElementById("ep");
   var body = document.getElementById("rows");
+  var count = document.getElementById("count");
+  var more = document.getElementById("more");
   var empty = document.getElementById("empty");
-  input.addEventListener("input", function () {
-    var matches = rankApis(apis, input.value);
-    while (body.firstChild) { body.removeChild(body.firstChild); }
-    matches.forEach(function (api) { body.appendChild(buildRow(api)); });
+  var matches = apis;
+  var shown = PAGE_SIZE;
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    if (text !== null && text !== undefined) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  function ms(value) { return value === null || value === undefined ? "—" : value + " ms"; }
+
+  function strip(days) {
+    var span = el("span", "strip");
+    var worked = (days.match(/W/g) || []).length;
+    var probed = days.replace(/\./g, "").length;
+    span.setAttribute("role", "img");
+    span.setAttribute("aria-label", "Worked on " + worked + " of " + probed + " probed days");
+    for (var i = 0; i < days.length; i++) {
+      span.appendChild(el("i", days.charAt(i) === "." ? "" : days.charAt(i)));
+    }
+    return span;
+  }
+
+  function authCell(api) {
+    var td = el("td", "auth");
+    if (api.probe_depth === "endpoint") {
+      var pill = { "keyless": ["ok", "No key"], "key-required": ["key", "Key required"] }[api.auth] ||
+        ["unk", "Unclear"];
+      td.appendChild(el("span", "pill " + pill[0], pill[1]));
+      td.title = "Measured at an endpoint from the API's OpenAPI spec";
+      return td;
+    }
+    var note = el("span", "site-note");
+    var site = api.probe_depth === "site";
+    note.appendChild(document.createTextNode(site ? "Site only · listed: " : "Not probed yet · listed: "));
+    note.appendChild(el("b", null, api.declared_auth));
+    td.appendChild(note);
+    td.title = site
+      ? "Probed at the API's website, so auth was not measured; this is what the source list declares"
+      : "Not probed yet, so auth was not measured; this is what the source list declares";
+    return td;
+  }
+
+  function buildRow(api) {
+    var tr = el("tr", api.active ? "" : "inactive");
+    var dead = api.days.replace(/\.+$/, "").slice(-1) === "D";
+    var name = el("td", dead ? "api dead" : "api");
+    var link = el("a");
+    link.href = "apis/" + encodeURIComponent(api.id) + ".html";
+    link.appendChild(el("div", "nm", api.name));
+    name.appendChild(link);
+    name.appendChild(el("div", "id", api.id));
+    tr.appendChild(name);
+    tr.appendChild(el("td", "cat hide-sm", api.categories.join(", ")));
+    var days = el("td", "days-cell");
+    days.appendChild(strip(api.days));
+    days.appendChild(el("span", "days", api.working_30d + "/" + api.days_observed_30d));
+    tr.appendChild(days);
+    tr.appendChild(el("td", "num hide-sm", ms(api.p50_ms)));
+    tr.appendChild(authCell(api));
+    return tr;
+  }
+
+  function draw() {
+    body.textContent = "";
+    matches.slice(0, shown).forEach(function (api) { body.appendChild(buildRow(api)); });
+    count.textContent = "Showing " + Math.min(shown, matches.length) + " of " + matches.length;
+    more.hidden = shown >= matches.length;
     empty.hidden = matches.length > 0;
+  }
+
+  function update() {
+    var ranked = query.value.trim() ? rankApis(apis, query.value) : apis;
+    matches = filterApis(ranked, {
+      status: statusSelect.value,
+      category: categorySelect.value,
+      endpointOnly: endpointBox.checked
+    });
+    shown = PAGE_SIZE;
+    draw();
+  }
+
+  query.addEventListener("input", update);
+  [statusSelect, categorySelect, endpointBox].forEach(function (control) {
+    control.addEventListener("change", update);
   });
+  more.addEventListener("click", function () {
+    shown += PAGE_SIZE;
+    draw();
+  });
+  update();
 })();
 </script>
 {% endblock %}
