@@ -193,7 +193,12 @@ def test_latency_uses_a_dash_for_missing_values(tmp_path):
 def test_last_probe_shows_utc_time_outcome_and_status(tmp_path):
     html = _render(tmp_path, _rec("a"), [W(1), R(0)])
     fact = _fact(html, "last-probe")
-    assert "2026-10-10T03:00:00Z" in fact and "responded" in fact and "500" in fact
+    assert (
+        "2026-10-10 03:00 UTC" in fact
+        and "T03:00" not in fact
+        and "responded" in fact
+        and "500" in fact
+    )
 
 
 def test_last_probe_is_a_dash_when_never_probed(tmp_path):
@@ -313,7 +318,7 @@ def test_page_sparkline_uses_one_value_per_strip_date_oldest_first(tmp_path):
     assert len(points) == 2
     first_x = float(points[0].split()[0].split(",")[0])
     last_x = float(points[-1].split()[-1].split(",")[0])
-    assert (first_x, last_x) == (10.7, 320.0)
+    assert (first_x, last_x) == (15.5, 314.8)
 
 
 def test_page_says_not_enough_latency_data_with_fewer_than_two_values(tmp_path):
@@ -409,3 +414,20 @@ def test_rerender_is_byte_identical(tmp_path):
     first = page.read_bytes()
     render_site(settings)
     assert page.read_bytes() == first
+
+
+def test_last_probe_time_has_no_seconds_or_microseconds(tmp_path):
+    html = _render(tmp_path, _rec("a"), [W(0)])
+    assert re.search(r'<p class="big mono">2026-10-10 03:00 UTC</p>', html)
+
+
+def test_sparkline_sits_directly_under_the_strip_with_a_max_label(tmp_path):
+    html = _render(tmp_path, _rec("a"), [W(2, 90), W(1, 105), W(0, 40)])
+    assert "max 105 ms" in _text(re.search(r'<div class="spark-cap">.*?</div>', html, re.S)[0])
+    strip_end = html.index('<div class="strip-dates">')
+    assert strip_end < html.index('<div class="spark-cap">') < html.index("<svg")
+
+
+def test_no_max_label_when_there_is_no_sparkline(tmp_path):
+    html = _render(tmp_path, _rec("a"), [W(0, 100)])
+    assert "max " not in _text(re.sub(r"<style.*?</style>", "", html, flags=re.S))

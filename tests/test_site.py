@@ -312,7 +312,7 @@ def test_api_page_renders_every_detail_payload_field(tmp_path):
         "23",
         "137",
         "842",
-        "2026-10-09T06:30:00Z",
+        "2026-10-09 06:30 UTC",
         "responded",
         "204",
         "Key required",

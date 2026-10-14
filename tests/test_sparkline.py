@@ -38,8 +38,9 @@ def test_gaps_break_the_line_into_one_polyline_per_run():
 
 def test_x_follows_the_position_in_the_series_so_a_gap_keeps_its_width():
     lines = _polylines(latency_sparkline([10, None, None, 40, 50], width=100, height=40))
-    assert [x for x, _ in lines[0]] == [0.0]  # a single-value run is still its own run
-    assert [x for x, _ in lines[1]] == [75.0, 100.0]
+    # x is the centre of the point's cell: (i + 0.5) / n * width, n = 5
+    assert [x for x, _ in lines[0]] == [10.0]  # a single-value run is still its own run
+    assert [x for x, _ in lines[1]] == [70.0, 90.0]
 
 
 def test_y_runs_from_zero_at_the_bottom_to_the_max_at_the_top():
@@ -52,7 +53,7 @@ def test_coordinates_are_rounded_to_one_decimal():
     for point in re.findall(r'points="([^"]*)"', svg)[0].split():
         for number in point.split(","):
             assert re.fullmatch(r"-?\d+\.\d", number), number
-    assert "0.0,40.3 33.3,33.6" in svg
+    assert "12.5,40.3 37.5,33.6" in svg
 
 
 def test_output_is_deterministic():
@@ -84,3 +85,33 @@ def test_maximum_of_zero_draws_on_the_baseline():
 
 def test_two_points_is_the_minimum_that_draws():
     assert "<polyline" in latency_sparkline([None, 5, None, 9])
+
+
+def test_x_is_the_centre_of_the_cell_so_it_lines_up_with_a_strip_of_n_cells():
+    n, width = 31, 320
+    svg = latency_sparkline([10] * n, width=width)
+    (line,) = _polylines(svg)
+    assert line[0][0] == round(0.5 / n * width, 1) == 5.2
+    assert line[-1][0] == round((n - 0.5) / n * width, 1) == 314.8
+
+
+def test_svg_stretches_to_its_container_with_undistorted_strokes():
+    svg = latency_sparkline([10, 20, 30])
+    assert 'preserveAspectRatio="none"' in svg
+    assert svg.count('vector-effect="non-scaling-stroke"') >= svg.count("<polyline") >= 1
+    assert re.search(r'<polyline[^>]*vector-effect="non-scaling-stroke"', svg)
+
+
+def test_a_faint_baseline_sits_at_y_equals_height():
+    svg = latency_sparkline([10, 20, 30], width=100, height=40)
+    base = re.search(r'<line[^>]*class="base"[^>]*>', svg)[0]
+    assert 'x1="0"' in base and 'x2="100"' in base
+    assert 'y1="40"' in base and 'y2="40"' in base
+
+
+def test_an_isolated_point_is_a_short_horizontal_segment_not_a_circle():
+    svg = latency_sparkline([10, None, 30, 40], width=100, height=40)
+    assert "<circle" not in svg
+    segment = re.search(r'<line[^>]*class="dot"[^>]*>', svg)[0]
+    assert 'x1="11.5"' in segment and 'x2="14.5"' in segment  # centre 12.5 +- 1.5
+    assert 'y1="30.0"' in segment and 'y2="30.0"' in segment
