@@ -580,3 +580,17 @@ def test_counts_use_thousands_separators_on_the_server_and_in_the_client(tmp_pat
     assert 'Intl.NumberFormat("en-US")' in script
     assert re.search(r'"Showing " \+ number\.format\(Math\.min\(shown, matches\.length\)\)', script)
     assert re.search(r'" of " \+ number\.format\(matches\.length\)', script)
+
+
+def test_category_option_counts_and_the_show_all_summary_use_thousands_separators(tmp_path):
+    ids = [f"api-{n:04d}" for n in range(1001)]
+    records = [_rec(i, tags=("games & comics",)) for i in ids]
+    html = _index(_site(tmp_path, records, [_good(i, 10 + n) for n, i in enumerate(ids)]))
+    cat = re.search(r'<select[^>]*id="cat".*?</select>', html, re.S)[0]
+    assert re.findall(r'<option value="([^"]*)">(.*?)</option>', cat) == [
+        ("", "All categories"),
+        ("games &amp; comics", "games &amp; comics (1,001)"),
+    ]
+    assert re.search(r"<summary[^>]*>\s*Show all 1,001\s*</summary>", html)
+    sub = re.search(r'<span class="sub">(.*?)</span>', html, re.S)[1]
+    assert _text(sub).startswith("1,001 APIs answered a documented endpoint")
