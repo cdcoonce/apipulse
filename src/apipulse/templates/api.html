@@ -21,8 +21,11 @@
 .fact .sub { color: var(--muted); font-size: .85rem; margin: 0 0 .25rem; }
 .strip.big { display: grid; width: 100%; height: 2.4rem; gap: 2px; }
 .strip.big i { border-radius: 2px; }
-.strip-dates { display: flex; justify-content: space-between; font-family: var(--mono); font-size: .78rem; color: var(--muted); margin: .3rem 0 .8rem; }
-.spark { display: block; width: 100%; max-width: 30rem; height: auto; color: var(--accent); overflow: visible; }
+.strip-dates { display: flex; justify-content: space-between; font-family: var(--mono); font-size: .78rem; color: var(--muted); margin: .3rem 0 .6rem; }
+.spark { display: block; width: 100%; height: 3.2rem; color: var(--accent); overflow: visible; }
+.spark-cap { display: flex; justify-content: space-between; gap: .5rem; font-size: .78rem; color: var(--muted); margin-bottom: .2rem; }
+.spark-cap span:last-child { font-family: var(--mono); }
+.spark .dot { stroke-width: 4; }
 .spark polyline { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .api-log { margin-top: 1.4rem; }
 .api-log summary { cursor: pointer; color: var(--accent); font-weight: 600; }
@@ -68,7 +71,7 @@
 {% endcall %}
 {% call fact("last-probe", "Last probe") %}
 {% if d.last_probe %}
-<p class="big mono">{{ d.last_probe.at }}</p>
+<p class="big mono">{{ d.last_probe.at[:10] }} {{ d.last_probe.at[11:16] }} UTC</p>
 <p class="sub">{{ show(d.last_probe.outcome) }} · HTTP status {{ show(d.last_probe.status) }}</p>
 {% else %}
 <p class="big">—</p>
@@ -81,9 +84,10 @@
 <div class="sec-head"><h2>Last 31 days</h2>{{ legend() }}</div>
 {% if strip_dates %}
 {{ big_strip(strip_dates, days) }}
-<h2>Latency per day</h2>
 {% set spark = latency_sparkline(latencies) %}
-{% if spark %}{{ spark }}{% else %}<p class="empty">Not enough latency data yet</p>{% endif %}
+{% if spark %}<div class="spark-cap"><span>Median latency per day</span><span>max {{ ms(latencies | reject("none") | max) }}</span></div>
+{{ spark }}
+{% else %}<p class="empty">Not enough latency data yet</p>{% endif %}
 {% else %}
 <p class="empty">Not probed yet</p>
 {% endif %}

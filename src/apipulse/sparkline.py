@@ -33,10 +33,10 @@ def latency_sparkline(
     if len(present) < 2:
         return Markup("")
     top = max(present)
-    steps = max(len(values) - 1, 1)
+    cells = len(values)
 
     def point(index: int, value: int) -> tuple[float, float]:
-        x = index / steps * width
+        x = (index + 0.5) / cells * width  # the centre of the strip cell for this date
         y = height - (value / top * height if top else 0)
         return round(x, 1), round(y, 1)
 
@@ -44,13 +44,25 @@ def latency_sparkline(
     for run in _runs(values):
         points = [point(index, value) for index, value in run]
         text = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
-        shapes.append(f'<polyline points="{text}" fill="none" stroke="currentColor"/>')
+        shapes.append(
+            f'<polyline points="{text}" fill="none" stroke="currentColor" '
+            'vector-effect="non-scaling-stroke"/>'
+        )
         if len(points) == 1:
+            # A circle would be squashed by the non-uniform scaling; a short segment with a
+            # round cap stays a dot.
             x, y = points[0]
-            shapes.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="1.5" fill="currentColor"/>')
+            shapes.append(
+                f'<line class="dot" x1="{x - 1.5:.1f}" x2="{x + 1.5:.1f}" y1="{y:.1f}" '
+                f'y2="{y:.1f}" stroke="currentColor" stroke-linecap="round" '
+                'vector-effect="non-scaling-stroke"/>'
+            )
     label = f"Median latency per day, {min(present)} to {top} ms"
     return Markup(
         f'<svg class="spark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-        f'role="img" aria-label="{label}" overflow="visible">'
+        f'role="img" aria-label="{label}" preserveAspectRatio="none" '
+        'overflow="visible">'
+        f'<line class="base" x1="0" x2="{width}" y1="{height}" y2="{height}" '
+        'stroke="currentColor" opacity=".25" vector-effect="non-scaling-stroke"/>'
         f"{''.join(shapes)}</svg>"
     )

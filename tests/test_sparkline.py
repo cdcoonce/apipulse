@@ -113,5 +113,5 @@ def test_an_isolated_point_is_a_short_horizontal_segment_not_a_circle():
     svg = latency_sparkline([10, None, 30, 40], width=100, height=40)
     assert "<circle" not in svg
     segment = re.search(r'<line[^>]*class="dot"[^>]*>', svg)[0]
-    assert 'x1="11.5"' in segment and 'x2="14.5"' in segment  # centre 12.5 +- 1.5
+    assert 'x1="11.0"' in segment and 'x2="14.0"' in segment  # centre 12.5 +- 1.5
     assert 'y1="30.0"' in segment and 'y2="30.0"' in segment
