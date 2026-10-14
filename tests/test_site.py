@@ -80,10 +80,20 @@ def _embedded(html: str):
     return json.loads(match.group(1))
 
 
+def _directory_rows(html: str) -> list[tuple[str, str]]:
+    """(opening tag, inner html) of every directory row."""
+    body = re.search(r'<tbody id="rows">(.*?)</tbody>', html, re.S)
+    assert body, "directory tbody not found"
+    return re.findall(r"(<tr[^>]*>)(.*?)</tr>", body[1], re.S)
+
+
 def test_index_html_lists_every_api_id(tmp_path):
     site = _site(tmp_path, [_rec("alpha"), _rec("beta")])
     html = (site / "index.html").read_text(encoding="utf-8")
     assert "alpha" in html and "beta" in html
+    for api_id in ("alpha", "beta"):
+        assert f'href="apis/{api_id}.html"' in html
+    assert len(_directory_rows(html)) == 2
 
 
 SUMMARY_KEYS = {
@@ -156,16 +166,21 @@ def test_inactive_api_stays_in_index_with_muted_row_and_inactive_flag(tmp_path):
     html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
     by_id = {e["id"]: e for e in _embedded(html)}
     assert by_id["dead"]["active"] is False and by_id["alive"]["active"] is True
-    assert re.search(r'<tr class="inactive"[^>]*>\s*<td><a [^>]*>dead', html)
-    assert not re.search(r'<tr class="inactive"[^>]*>\s*<td><a [^>]*>alive', html)
+    rows = {
+        re.search(r'href="apis/([^"]+)\.html"', inner)[1]: tag
+        for tag, inner in _directory_rows(html)
+    }
+    assert rows == {"dead": '<tr class="inactive">', "alive": "<tr>"}
 
 
 def _cells(html: str, api_id: str) -> list[str]:
-    row = re.search(rf"<tr[^>]*>\s*<td>\s*<a [^>]*>{re.escape(api_id)}</a>.*?</tr>", html, re.S)
-    assert row, f"row for {api_id} not found"
-    return [
-        re.sub(r"<[^>]+>", "", c).strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", row[0], re.S)
-    ]
+    for _, inner in _directory_rows(html):
+        if f'href="apis/{api_id}.html"' in inner:
+            return [
+                re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", c)).strip()
+                for c in re.findall(r"<td[^>]*>(.*?)</td>", inner, re.S)
+            ]
+    raise AssertionError(f"row for {api_id} not found")
 
 
 def test_index_row_shows_id_name_stats_auth_and_last_probe_date(tmp_path):
@@ -175,17 +190,25 @@ def test_index_row_shows_id_name_stats_auth_and_last_probe_date(tmp_path):
         [_roll("alpha", 28, 25, 120, auth="keyless")],
     )
     html = (site / "index.html").read_text(encoding="utf-8")
+    # cells: name over id, categories, strip with working/observed days, median, auth
     assert _cells(html, "alpha") == [
-        "alpha",
-        "Alpha API",
-        "28",
-        "25",
-        "120",
-        "keyless",
-        "2026-10-10",
+        "Alpha API alpha",
+        "",
+        "25/30",
+        "120 ms",
+        "Not probed yet · listed: none listed",
     ]
     assert 'href="apis/alpha.html"' in html
-    assert _cells(html, "bare") == ["bare", "bare", "0", "0", "—", "unknown", "—"]
+    assert _cells(html, "bare") == [
+        "bare bare",
+        "",
+        "0/0",
+        "—",
+        "Not probed yet · listed: none listed",
+    ]
+    # the last probe date is no longer a column; it still ships in the embedded entry
+    last = {e["id"]: e["last_probe_at"] for e in _embedded(html)}
+    assert last == {"alpha": "2026-10-10T12:00:00Z", "bare": None}
 
 
 def test_index_and_apis_json_use_the_empty_query_ordering(tmp_path):
@@ -204,7 +227,8 @@ def test_index_and_apis_json_use_the_empty_query_ordering(tmp_path):
     html = (site / "index.html").read_text(encoding="utf-8")
     assert [e["id"] for e in json.loads((site / "apis.json").read_text("utf-8"))] == expected
     assert [e["id"] for e in _embedded(html)] == expected
-    assert re.findall(r'<td><a href="apis/([^"]+)\.html">', html) == expected
+    rows = _directory_rows(html)
+    assert [re.search(r'href="apis/([^"]+)\.html"', inner)[1] for _, inner in rows] == expected
 
 
 HOSTILE_DESC = '</script><script>alert("d")</script> & <!-- tricky \u2028 \u2029'
