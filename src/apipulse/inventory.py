@@ -131,12 +131,45 @@ PUBLIC_APIS_README_URL = (
 _LINK = re.compile(r"^\[(?P<text>.*)\]\((?P<url>[^)\s]+)\)$")
 
 
+_SEPARATOR_CELL = re.compile(r"^[-: ]*$")
+
+
+def _split_row(line: str) -> list[str]:
+    body = line.strip()
+    if body.startswith("|"):
+        body = body[1:]
+    if body.endswith("|"):
+        body = body[:-1]
+    return [cell.strip() for cell in body.split("|")]
+
+
+def _is_separator(line: str) -> bool:
+    return "-" in line and all(_SEPARATOR_CELL.match(cell) for cell in _split_row(line))
+
+
+def _auth_index(header_line: str) -> int | None:
+    for index, cell in enumerate(_split_row(header_line)):
+        if cell.lower() == "auth":
+            return index
+    return None
+
+
 def parse_public_apis(markdown: str) -> list[ApiRecord]:
     records: list[ApiRecord] = []
     category = ""
+    auth_index: int | None = None
+    previous = ""
     for line in markdown.splitlines():
+        before, previous = previous, line
         if line.startswith("### "):
             category = line[4:].strip()
+            auth_index = None
+            continue
+        if "|" not in line:
+            auth_index = None
+            continue
+        if _is_separator(line):
+            auth_index = _auth_index(before) if "|" in before else None
             continue
         if not line.startswith("|"):
             continue
@@ -150,7 +183,9 @@ def parse_public_apis(markdown: str) -> list[ApiRecord]:
         if not url.startswith(("http://", "https://")):
             continue
         parts = urlsplit(url)
-        auth = cells[2].replace("`", "").strip()
+        auth = ""
+        if auth_index is not None and auth_index < len(cells):
+            auth = cells[auth_index].replace("`", "").strip()
         records.append(
             ApiRecord(
                 id=host_of(url),

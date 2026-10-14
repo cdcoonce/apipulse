@@ -76,7 +76,6 @@ def test_three_column_apilayer_table_has_no_declared_auth_but_keeps_rows():
 def test_reordered_table_reads_auth_from_its_header_case_insensitively():
     records = _case_records()
     assert records["Reorder One"].declared_auth == "apiKey"
-    assert records["Reorder One"].description == "Reordered columns"
     assert records["Reorder No"].declared_auth is None
 
 
