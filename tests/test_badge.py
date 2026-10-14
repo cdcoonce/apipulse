@@ -13,6 +13,8 @@ def test_badge_text_variants():
     assert badge_text(_r(29, 30, None)) == "reachable 29/30"
     assert badge_text(None) == "no data"
     assert badge_text(_r(0, 0, None)) == "no data"
+    assert badge_text(_r(4, 4, 212)) == "reachable 4/4 · 212 ms"
+    assert badge_text(_r(3, 4, None)) == "reachable 3/4"
     assert badge_text(empty_rollup("x")) == "no data"
 
 
@@ -24,6 +26,22 @@ def test_badge_color_thresholds():
     assert badge_color(_r(14)) == RED
     assert badge_color(None) == GREY
     assert badge_color(_r(20, 0)) == GREY
+
+
+def test_badge_color_uses_observed_days_as_denominator():
+    assert badge_color(_r(4, 4)) == GREEN
+    assert badge_color(_r(3, 4)) == YELLOW
+    assert badge_color(_r(1, 4)) == RED
+    assert badge_color(_r(9, 10)) == GREEN
+    assert badge_color(_r(1, 2)) == YELLOW
+    assert badge_color(_r(0, 1)) == RED
+
+
+def test_badge_color_full_window_cases_pinned():
+    assert badge_color(_r(27, 30)) == GREEN
+    assert badge_color(_r(26, 30)) == YELLOW
+    assert badge_color(_r(15, 30)) == YELLOW
+    assert badge_color(_r(14, 30)) == RED
 
 
 SVG = "{http://www.w3.org/2000/svg}"
@@ -45,6 +63,15 @@ def test_width_grows_with_text_and_matches_formula():
     rw = round(len("reachable 30/30 · 212 ms") * CHAR_PX + 10)
     assert int(long_.get("width")) == lw + rw
     assert int(short.get("width")) == lw + round(len("no data") * CHAR_PX + 10)
+
+
+def test_title_and_width_follow_observed_days_text():
+    root = ET.fromstring(render_badge(_r(4, 4, 212), "x"))
+    assert root.find(f"{SVG}title").text == "apipulse: reachable 4/4 · 212 ms"
+    assert root.findall(f"{SVG}rect")[1].get("fill") == GREEN
+    lw = round(len("apipulse") * CHAR_PX + 10)
+    rw = round(len("reachable 4/4 · 212 ms") * CHAR_PX + 10)
+    assert int(root.get("width")) == lw + rw
 
 
 def test_text_is_xml_escaped(monkeypatch):

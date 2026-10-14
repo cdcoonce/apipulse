@@ -1,0 +1,66 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "B1 text denominator is literal 30",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "find": "/{rollup.days_observed_30d}\"",
+      "replace": "/30\""
+    },
+    {
+      "label": "B2 colour compares reachable against 30, not observed",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "find": "reachable, observed = rollup.reachable_30d, rollup.days_observed_30d",
+      "replace": "reachable, observed = rollup.reachable_30d, 30"
+    },
+    {
+      "label": "B2 green boundary > instead of >=",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "find": "10 * reachable >= 9 * observed",
+      "replace": "10 * reachable > 9 * observed"
+    },
+    {
+      "label": "B2 yellow boundary > instead of >=",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "find": "2 * reachable >= observed",
+      "replace": "2 * reachable > observed"
+    },
+    {
+      "label": "B1 observed 0 no longer means no data",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "find": "return rollup is not None and rollup.days_observed_30d > 0",
+      "replace": "return rollup is not None and rollup.days_observed_30d >= 0"
+    },
+    {
+      "label": "[control] commute integer comparison operands",
+      "file": "../../src/apipulse/badge.py",
+      "oracle": "real",
+      "expect": "survived",
+      "why": "Integer multiplication is commutative, so 10*r >= 9*o and r*10 >= o*9 are the same predicate for every integer input; no test can distinguish them.",
+      "find": "10 * reachable >= 9 * observed",
+      "replace": "reachable * 10 >= observed * 9"
+    }
+  ]
+}
