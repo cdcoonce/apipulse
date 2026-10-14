@@ -2,7 +2,7 @@ import json
 import re
 import shutil
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -10,10 +10,11 @@ from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.prober import USER_AGENT, Outcome, ProbeResult
 from apipulse.render import render_site
-from apipulse.rollup import Rollup
+from apipulse.rollup import Rollup, compute_rollup
 from apipulse.store import (
     append_probes,
     connect,
+    read_probes,
     record_optouts,
     search_apis,
     upsert_apis,
@@ -96,6 +97,11 @@ SUMMARY_KEYS = {
     "auth",
     "description",
     "tags",
+    "days_observed_30d",
+    "probe_depth",
+    "days",
+    "declared_auth",
+    "categories",
 }
 
 
@@ -118,6 +124,11 @@ def test_apis_json_has_summary_fields_plus_description_and_tags(tmp_path):
         "auth": "keyless",
         "description": "first api",
         "tags": ["x", "y"],
+        "days_observed_30d": 30,
+        "probe_depth": None,
+        "days": "." * 31,
+        "declared_auth": "none listed",
+        "categories": ["x", "y"],
     }
 
 
@@ -703,3 +714,171 @@ def test_templates_ship_inside_the_package():
 
     shipped = {p.name for p in files("apipulse").joinpath("templates").iterdir()}
     assert {"base.html", "index.html", "api.html", "project.html", "removed.html"} <= shipped
+
+
+def _entries(site) -> list[dict]:
+    return json.loads((site / "apis.json").read_text(encoding="utf-8"))
+
+
+def _by_id(site) -> dict[str, dict]:
+    return {e["id"]: e for e in _entries(site)}
+
+
+def test_entry_days_observed_comes_from_the_rollup_not_working_or_reachable(tmp_path):
+    rollup = Rollup("a", 7, 4, 11, 50, 50, NOW, "responded", 200, "https://a.example.com")
+    site = _site(tmp_path, [_rec("a")], [rollup])
+    entry = _by_id(site)["a"]
+    assert (entry["reachable_30d"], entry["working_30d"], entry["days_observed_30d"]) == (7, 4, 11)
+
+
+def test_entry_probe_depth_follows_the_rollup_target_against_the_base_url(tmp_path):
+    base = "https://{}.example.com"
+    rollups = [
+        Rollup("site", 1, 1, 1, 5, 5, NOW, "responded", 200, base.format("site")),
+        Rollup("deep", 1, 1, 1, 5, 5, NOW, "responded", 200, base.format("deep") + "/v1/ping"),
+    ]
+    site = _site(tmp_path, [_rec("site"), _rec("deep"), _rec("cold")], rollups)
+    by_id = _by_id(site)
+    assert by_id["site"]["probe_depth"] == "site"
+    assert by_id["deep"]["probe_depth"] == "endpoint"
+    assert by_id["cold"]["probe_depth"] is None
+    assert by_id["cold"]["days_observed_30d"] == 0
+
+
+def test_unprobed_api_has_an_empty_strip(tmp_path):
+    site = _site(tmp_path, [_rec("cold")])
+    assert _by_id(site)["cold"]["days"] == "." * 31
+
+
+def test_embedded_index_json_carries_the_render_only_keys(tmp_path):
+    site = _site(
+        tmp_path,
+        [_rec("a", tags=("open_data", "Open Data")), _rec("b")],
+        [_roll("a", 1, 1, 5)],
+    )
+    embedded = _embedded((site / "index.html").read_text(encoding="utf-8"))
+    assert embedded == _entries(site)
+    for entry in embedded:
+        assert {"days", "declared_auth", "categories"} <= set(entry)
+
+
+def test_categories_are_labelled_sorted_and_deduplicated(tmp_path):
+    tags = ("open_data", "Open Data", "Financial", "finance", "Developer Tools", "weather")
+    site = _site(tmp_path, [_rec("a", tags=tags)])
+    assert _by_id(site)["a"]["categories"] == ["development", "finance", "open data", "weather"]
+
+
+@pytest.mark.parametrize(
+    ("declared", "label"),
+    [
+        (None, "none listed"),
+        ("No", "none listed"),
+        ("apiKey", "API key"),
+        ("`OAuth`", "OAuth"),
+        ("X-Mashape-Key", "API key"),
+        ("User-Agent", "User-Agent header"),
+        ("[click](javascript:alert(1))", "unclear"),
+        ("<img src=x onerror=alert(1)>" + "A" * 2000, "unclear"),
+    ],
+)
+def test_entry_declared_auth_is_the_label_never_the_raw_value(tmp_path, declared, label):
+    site = _site(tmp_path, [_rec("a", declared_auth=declared)])
+    assert _by_id(site)["a"]["declared_auth"] == label
+
+
+def _probes_for(settings: Settings, api_id: str, base_url: str, spec) -> None:
+    results = [
+        (api_id, _probe(base_url, at, outcome, status, 10 if status else None))
+        for at, outcome, status in spec
+    ]
+    append_probes(settings, results, now=max(at for at, _, _ in spec))
+
+
+def test_strip_reflects_window_probes_with_the_strip_rules(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    url = "https://a.example.com"
+    rollup = Rollup("a", 2, 1, 3, 10, 10, NOW, "responded", 200, url)
+    _seed(settings, [_rec("a")], [rollup])
+    _probes_for(
+        settings,
+        "a",
+        url,
+        [
+            (NOW, Outcome.responded, 200),
+            (NOW - timedelta(days=1), Outcome.responded, 503),
+            (NOW - timedelta(days=2), Outcome.timeout, None),
+        ],
+    )
+    render_site(settings)
+    strip = _by_id(tmp_path / "site")["a"]["days"]
+    assert len(strip) == 31
+    assert strip[-3:] == "DRW"
+    assert strip[:-3] == "." * 28
+
+
+def test_strip_uses_the_newest_probe_when_it_is_later_than_the_rollup_anchor(tmp_path):
+    # A real run stores computed_at = run start but rolls up at the newest probe time.
+    settings = Settings(data_dir=tmp_path)
+    url = "https://a.example.com"
+    computed_at = datetime(2026, 10, 10, 8, 0, 1, tzinfo=UTC)
+    probes = [
+        (datetime(2026, 10, 10, 8, 0, 5, tzinfo=UTC), Outcome.responded, 200),
+        (datetime(2026, 10, 10, 8, 55, tzinfo=UTC), Outcome.responded, 200),
+        (datetime(2026, 10, 9, 8, 30, tzinfo=UTC), Outcome.responded, 500),
+    ]
+    newest = max(at for at, _, _ in probes)
+    _seed(settings, [_rec("a")], [_roll("a", 0, 0, 10)], computed_at=computed_at)
+    _probes_for(settings, "a", url, probes)
+    rows = read_probes(settings, since=newest - timedelta(days=30))
+    expected = compute_rollup("a", rows, now=newest)
+    # Store the rollup a run would have stored, with the run-start timestamp.
+    conn = connect(settings)
+    try:
+        upsert_rollups(conn, [expected], computed_at=computed_at)
+    finally:
+        conn.close()
+    render_site(settings)
+    entry = _by_id(tmp_path / "site")["a"]
+    strip = entry["days"]
+    assert strip[-1] == "W"
+    assert strip.count("W") == expected.working_30d == 1
+    assert strip.count("W") + strip.count("R") == expected.reachable_30d == 2
+    assert 31 - strip.count(".") == expected.days_observed_30d == 2
+
+
+def test_strip_falls_back_to_the_anchor_when_there_are_no_probes(tmp_path):
+    site = _site(tmp_path, [_rec("a")], [_roll("a", 1, 1, 5)])
+    assert _by_id(site)["a"]["days"] == "." * 31
+
+
+def test_strip_is_31_dots_when_there_is_no_anchor(tmp_path, monkeypatch):
+    import apipulse.render as render_module
+
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, [_rec("a")])
+    monkeypatch.setattr(render_module, "data_anchor", lambda conn: None)
+    render_site(settings)
+    assert _by_id(tmp_path / "site")["a"]["days"] == "." * 31
+
+
+def test_label_filters_and_day_strip_are_available_to_templates():
+    from apipulse.labels import category_label, declared_auth_label
+    from apipulse.render import _env
+    from apipulse.rollup import day_strip
+
+    env = _env()
+    assert env.filters["declared_auth_label"] is declared_auth_label
+    assert env.filters["category_label"] is category_label
+    assert env.globals["day_strip"] is day_strip
+    template = env.from_string(
+        "{{ 'apiKey'|declared_auth_label }}|{{ 'Open_Data'|category_label }}"
+    )
+    assert template.render() == "API key|open data"
+
+
+def test_v1_search_summary_does_not_carry_the_render_only_keys():
+    from apipulse.api import search_summary
+    from apipulse.store import SearchHit
+
+    summary = search_summary(SearchHit("a", "A", 1, 1, 1, NOW, True, 0.0, "keyless"))
+    assert not {"days", "declared_auth", "categories"} & set(summary)

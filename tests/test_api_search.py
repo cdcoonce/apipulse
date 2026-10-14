@@ -72,6 +72,8 @@ def test_search_route_payload_shape(tmp_path):
             "last_probe_at",
             "active",
             "auth",
+            "days_observed_30d",
+            "probe_depth",
         }
     first = body["results"][0]
     assert first["last_probe_at"] == "2026-10-10T12:00:00Z"

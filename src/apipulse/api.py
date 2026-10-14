@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
-from apipulse.rollup import WINDOW_DAYS, Rollup, empty_rollup
+from apipulse.rollup import WINDOW_DAYS, Rollup, empty_rollup, probe_depth
 from apipulse.store import (
     ProbeRow,
     SearchHit,
@@ -53,6 +53,7 @@ def detail_payload(
         "reachable_30d": rollup.reachable_30d,
         "working_30d": rollup.working_30d,
         "days_observed_30d": rollup.days_observed_30d,
+        "probe_depth": probe_depth(rollup.probe_target, record.base_url),
         "latency": {"p50_ms": rollup.p50_ms, "p95_ms": rollup.p95_ms},
         "last_probe": last_probe,
         "history": history,
@@ -83,6 +84,8 @@ def search_summary(hit: SearchHit) -> dict:
         ),
         "active": hit.active,
         "auth": hit.auth,
+        "days_observed_30d": hit.days_observed_30d,
+        "probe_depth": hit.probe_depth,
     }
 
 

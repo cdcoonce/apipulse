@@ -1,0 +1,236 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "1 probe_depth: invert site/endpoint equality",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "return \"site\" if probe_target == base_url else \"endpoint\"",
+      "replace": "return \"site\" if probe_target != base_url else \"endpoint\""
+    },
+    {
+      "label": "2 probe_depth: None target reads as site",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "    if probe_target is None:\n        return None\n    return \"site\" if",
+      "replace": "    if probe_target is None:\n        return \"site\"\n    return \"site\" if"
+    },
+    {
+      "label": "3 search_summary: days_observed_30d from working_30d",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "\"days_observed_30d\": hit.days_observed_30d,",
+      "replace": "\"days_observed_30d\": hit.working_30d,"
+    },
+    {
+      "label": "4 FTS search SQL: days_observed_30d selected as working_30d (FTS path)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "\" r.last_probe_at, r.auth, r.days_observed_30d, r.probe_target, a.base_url,\"",
+      "replace": "\" r.last_probe_at, r.auth, r.working_30d AS days_observed_30d, r.probe_target, a.base_url,\""
+    },
+    {
+      "label": "4b plain search SQL: days_observed_30d selected as working_30d (plain path)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "r.auth, r.days_observed_30d, r.probe_target, a.base_url\"",
+      "replace": "r.auth, r.working_30d AS days_observed_30d, r.probe_target, a.base_url\""
+    },
+    {
+      "label": "5 store _hit: no-rollup hit probe_depth falls back to site (SQL path)",
+      "file": "../../src/apipulse/store.py",
+      "oracle": "real",
+      "find": "probe_depth=probe_depth(row[\"probe_target\"], row[\"base_url\"]),",
+      "replace": "probe_depth=probe_depth(row[\"probe_target\"] or row[\"base_url\"], row[\"base_url\"]),"
+    },
+    {
+      "label": "5b render _hit: no-rollup entry probe_depth falls back to site (render path)",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "probe_depth=probe_depth(rollup.probe_target, api.base_url),",
+      "replace": "probe_depth=probe_depth(rollup.probe_target or api.base_url, api.base_url),"
+    },
+    {
+      "label": "5c detail_payload: no-rollup detail probe_depth falls back to site",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "\"probe_depth\": probe_depth(rollup.probe_target, record.base_url),",
+      "replace": "\"probe_depth\": probe_depth(rollup.probe_target or record.base_url, record.base_url),"
+    },
+    {
+      "label": "6 day_strip: index 0 is now-29d",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "first = cutoff.astimezone(UTC).date()",
+      "replace": "first = (cutoff + timedelta(days=1)).astimezone(UTC).date()"
+    },
+    {
+      "label": "7 day_strip: R checked before W",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "\"W\" if i in worked else \"R\" if i in responded else \"D\"",
+      "replace": "\"R\" if i in responded else \"W\" if i in worked else \"D\""
+    },
+    {
+      "label": "8 day_strip: drop the cutoff lower bound",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "        if not cutoff <= r.probed_at <= now:\n            continue\n        index",
+      "replace": "        if not r.probed_at <= now:\n            continue\n        index"
+    },
+    {
+      "label": "9 render: strip computed at wall clock instead of data",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    return max([anchor, *newest])",
+      "replace": "    return datetime.now().astimezone()"
+    },
+    {
+      "label": "10 render: categories not de-duplicated",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "\"categories\": sorted({category_label(t) for t in api.tags}),",
+      "replace": "\"categories\": sorted(category_label(t) for t in api.tags),"
+    },
+    {
+      "label": "11 declared_auth_label: x-mashape-key is unclear",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "\"x-mashape-key\": \"API key\",",
+      "replace": "\"x-mashape-key\": \"unclear\","
+    },
+    {
+      "label": "12 category_label: financial alias removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "_CATEGORY_ALIASES = {\"financial\": \"finance\", \"developer tools\": \"development\"}",
+      "replace": "_CATEGORY_ALIASES = {\"developer tools\": \"development\"}"
+    },
+    {
+      "label": "13 [control] whitespace regex rewritten to an equivalent quantifier",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "_WHITESPACE = re.compile(r\"\\s+\")",
+      "replace": "_WHITESPACE = re.compile(r\"\\s{1,}\")",
+      "expect": "survived",
+      "why": "\\s+ and \\s{1,} are the same regular language; re.sub collapses every maximal whitespace run to one space either way, so category_label output is identical for every input."
+    },
+    {
+      "label": "14 render: strip_now ignores newest probe (anchor only)",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    return max([anchor, *newest])",
+      "replace": "    return anchor"
+    },
+    {
+      "label": "x1 day_strip: drop the now upper bound",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "        if not cutoff <= r.probed_at <= now:\n            continue\n        index",
+      "replace": "        if not cutoff <= r.probed_at:\n            continue\n        index"
+    },
+    {
+      "label": "x2 day_strip: status 300 counts as working",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "if r.status is not None and 200 <= r.status < 300:",
+      "replace": "if r.status is not None and 200 <= r.status <= 300:"
+    },
+    {
+      "label": "x3 day_strip: dates taken in probe local tz not UTC",
+      "file": "../../src/apipulse/rollup.py",
+      "oracle": "real",
+      "find": "index = (r.probed_at.astimezone(UTC).date() - first).days",
+      "replace": "index = (r.probed_at.date() - first).days"
+    },
+    {
+      "label": "x4 declared_auth_label: backtick strip removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "raw.replace(\"`\", \"\").strip().lower()",
+      "replace": "raw.strip().lower()"
+    },
+    {
+      "label": "x5 declared_auth_label: lower() removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "raw.replace(\"`\", \"\").strip().lower()",
+      "replace": "raw.replace(\"`\", \"\").strip()"
+    },
+    {
+      "label": "x6 declared_auth_label: strip() removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "raw.replace(\"`\", \"\").strip().lower()",
+      "replace": "raw.replace(\"`\", \"\").lower()"
+    },
+    {
+      "label": "x7 category_label: underscore not replaced",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "tag.lower().replace(\"_\", \" \")",
+      "replace": "tag.lower()"
+    },
+    {
+      "label": "x8 category_label: developer tools alias removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "_CATEGORY_ALIASES = {\"financial\": \"finance\", \"developer tools\": \"development\"}",
+      "replace": "_CATEGORY_ALIASES = {\"financial\": \"finance\"}"
+    },
+    {
+      "label": "x9 category_label: outer strip removed",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": ".strip()\n    return _CATEGORY_ALIASES",
+      "replace": "\n    return _CATEGORY_ALIASES"
+    },
+    {
+      "label": "x10 render: categories not sorted",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "\"categories\": sorted({category_label(t) for t in api.tags}),",
+      "replace": "\"categories\": list({category_label(t) for t in api.tags}),"
+    },
+    {
+      "label": "x11 [control] render: anchor None still computes a strip (dead branch)",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "    if anchor is None:\n        return None\n    newest",
+      "replace": "    if anchor is None:\n        return datetime(2000, 1, 1).astimezone()\n    newest",
+      "expect": "survived",
+      "why": "data_anchor returns None only when the rollups table and the apis table are both empty, so there are no entries to attach a strip to; and with anchor None _window_probes returns no rows, so day_strip would give 31 dots anyway. The None branch is unreachable-by-observation; the amendment edge case cannot be graded through render_site."
+    },
+    {
+      "label": "x12 render: detail-style days_observed from reachable in _hit",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "days_observed_30d=rollup.days_observed_30d,",
+      "replace": "days_observed_30d=rollup.reachable_30d,"
+    },
+    {
+      "label": "x13 search_summary: probe_depth key dropped to None",
+      "file": "../../src/apipulse/api.py",
+      "oracle": "real",
+      "find": "\"probe_depth\": hit.probe_depth,",
+      "replace": "\"probe_depth\": None,"
+    }
+  ]
+}

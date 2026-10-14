@@ -12,7 +12,7 @@ import pyarrow.parquet as pq
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
 from apipulse.prober import ProbeResult
-from apipulse.rollup import Rollup
+from apipulse.rollup import Rollup, probe_depth
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS apis (
@@ -189,6 +189,8 @@ class SearchHit:
     active: bool
     relevance: float
     auth: str
+    days_observed_30d: int = 0
+    probe_depth: str | None = None
 
 
 def tokenize_query(q: str) -> list[str]:
@@ -207,12 +209,15 @@ def _hit(row: sqlite3.Row, relevance: float) -> SearchHit:
         active=bool(row["active"]),
         relevance=relevance,
         auth=row["auth"] or "unknown",
+        days_observed_30d=row["days_observed_30d"] or 0,
+        probe_depth=probe_depth(row["probe_target"], row["base_url"]),
     )
 
 
 _FTS_SEARCH = (
     "SELECT a.id, a.name, a.active, r.reachable_30d, r.working_30d, r.p50_ms,"
-    " r.last_probe_at, r.auth, bm25(apis_fts) AS rank"
+    " r.last_probe_at, r.auth, r.days_observed_30d, r.probe_target, a.base_url,"
+    " bm25(apis_fts) AS rank"
     " FROM apis_fts JOIN apis a ON a.id = apis_fts.id"
     " LEFT JOIN rollups r ON r.api_id = a.id"
     " WHERE apis_fts MATCH ? AND a.id NOT IN (SELECT key FROM optouts)"
@@ -224,7 +229,8 @@ _FTS_SEARCH = (
 
 _PLAIN_SEARCH = (
     "SELECT a.id, a.name, a.description, a.tags, a.active, r.reachable_30d, r.working_30d,"
-    " r.p50_ms, r.last_probe_at, r.auth FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
+    " r.p50_ms, r.last_probe_at, r.auth, r.days_observed_30d, r.probe_target, a.base_url"
+    " FROM apis a LEFT JOIN rollups r ON r.api_id = a.id"
     " WHERE a.id NOT IN (SELECT key FROM optouts)"
 )
 
