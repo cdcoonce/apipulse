@@ -58,7 +58,7 @@ def test_empty_rows_give_31_dots():
 
 
 def test_strip_is_31_chars_dated_from_cutoff_day_to_now_day():
-    strip = day_strip([_on(30), _on(0, status=500), _on(15, status=404)], now=NOW)
+    strip = day_strip([_on(30, hour=13), _on(0, status=500), _on(15, status=404)], now=NOW)
     assert len(strip) == 31
     assert strip[0] == "W"  # 2026-09-10
     assert strip[30] == "R"  # 2026-10-10

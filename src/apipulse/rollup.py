@@ -106,5 +106,40 @@ def compute_rollup(api_id: str, rows: Sequence[ProbeRow], *, now: datetime) -> R
     )
 
 
+def probe_depth(probe_target: str | None, base_url: str) -> str | None:
+    """None if never probed, "site" if the latest probe hit the base URL, else "endpoint"."""
+    if probe_target is None:
+        return None
+    return "site" if probe_target == base_url else "endpoint"
+
+
+_STRIP_DAYS = WINDOW_DAYS + 1
+
+
+def day_strip(rows: Sequence[ProbeRow], *, now: datetime) -> str:
+    """One character per UTC date, oldest first: W working, R responded, D down, . unobserved.
+
+    Uses compute_rollup's window filter, so the counts agree with its 30-day figures.
+    """
+    cutoff = now - timedelta(days=WINDOW_DAYS)
+    first = cutoff.astimezone(UTC).date()
+    worked: set[int] = set()
+    responded: set[int] = set()
+    observed: set[int] = set()
+    for r in rows:
+        if not cutoff <= r.probed_at <= now:
+            continue
+        index = (r.probed_at.astimezone(UTC).date() - first).days
+        observed.add(index)
+        if r.status is not None and 200 <= r.status < 300:
+            worked.add(index)
+        if r.outcome == "responded":
+            responded.add(index)
+    return "".join(
+        "W" if i in worked else "R" if i in responded else "D" if i in observed else "."
+        for i in range(_STRIP_DAYS)
+    )
+
+
 def empty_rollup(api_id: str) -> Rollup:
     return Rollup(api_id, 0, 0, 0, None, None, None, None, None, None)

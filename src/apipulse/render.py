@@ -11,8 +11,9 @@ from apipulse.api import detail_payload, search_summary
 from apipulse.badge import render_badge
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
+from apipulse.labels import category_label, declared_auth_label
 from apipulse.prober import USER_AGENT
-from apipulse.rollup import WINDOW_DAYS, Rollup, empty_rollup
+from apipulse.rollup import WINDOW_DAYS, Rollup, day_strip, empty_rollup, probe_depth
 from apipulse.store import (
     ProbeRow,
     SearchHit,
@@ -57,6 +58,9 @@ def _env() -> Environment:
         keep_trailing_newline=True,
     )
     env.globals["is_http_url"] = is_http_url
+    env.globals["day_strip"] = day_strip
+    env.filters["declared_auth_label"] = declared_auth_label
+    env.filters["category_label"] = category_label
     return env
 
 
@@ -76,6 +80,8 @@ def _hit(api: ApiRecord, active: bool, rollup: Rollup | None) -> SearchHit:
         active=active,
         relevance=0.0,
         auth=rollup.auth,
+        days_observed_30d=rollup.days_observed_30d,
+        probe_depth=probe_depth(rollup.probe_target, api.base_url),
     )
 
 
@@ -86,8 +92,28 @@ def _script_safe(text: str) -> str:
     return text.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
-def _entry(api: ApiRecord, hit: SearchHit) -> dict:
-    return {**search_summary(hit), "description": api.description, "tags": list(api.tags)}
+def _entry(api: ApiRecord, hit: SearchHit, days: str) -> dict:
+    return {
+        **search_summary(hit),
+        "description": api.description,
+        "tags": list(api.tags),
+        "days": days,
+        "declared_auth": declared_auth_label(api.declared_auth),
+        "categories": sorted({category_label(t) for t in api.tags}),
+    }
+
+
+def _strip_now(anchor: datetime | None, probes: dict[str, list[ProbeRow]]) -> datetime | None:
+    """The moment the day strips end at.
+
+    A run rolls up at its newest probe time but stores the run start as computed_at, so the
+    anchor alone can sit before the probes it summarises; the strip must end at the later of the
+    two to agree with the stored 30-day counts.
+    """
+    if anchor is None:
+        return None
+    newest = [row.probed_at for rows in probes.values() for row in rows]
+    return max([anchor, *newest])
 
 
 def _prune(directory: Path, suffix: str, keep: set[str]) -> None:
@@ -138,7 +164,16 @@ def render_site(settings: Settings, *, out_dir: Path | None = None) -> RenderSum
         (_hit(api, active, rollups.get(api.id)) for api, active in apis), key=search_order_key
     )
     by_id = {api.id: api for api, _ in apis}
-    entries = [_entry(by_id[h.id], h) for h in hits]
+    strip_now = _strip_now(anchor, probes)
+    blank = "." * 31
+    entries = [
+        _entry(
+            by_id[h.id],
+            h,
+            blank if strip_now is None else day_strip(probes.get(h.id, []), now=strip_now),
+        )
+        for h in hits
+    ]
     apis_json = _dumps(entries)
     _write(out_dir / "apis.json", apis_json)
     index = env.get_template("index.html")
