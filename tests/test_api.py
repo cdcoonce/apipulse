@@ -173,6 +173,7 @@ def test_payload_keys_are_the_public_contract(tmp_path):
         "reachable_30d",
         "working_30d",
         "days_observed_30d",
+        "probe_depth",
         "latency",
         "last_probe",
         "history",
@@ -209,3 +210,45 @@ def test_detail_without_rollup_has_unknown_auth_and_no_ratelimit_signals(tmp_pat
     body = _client(settings).get("/v1/apis/a").json()
     assert body["auth"] == {"classified": "unknown", "declared": None, "signup_url": None}
     assert body["ratelimit"] == {"headers_seen": [], "saw_429_30d": False}
+
+
+def _seed_rollup(settings: Settings, record: ApiRecord, probe_target: str | None) -> None:
+    conn = connect(settings)
+    try:
+        upsert_apis(conn, [record], seen_at=NOW)
+        rollup = Rollup(record.id, 1, 1, 1, 90, 90, NOW, "responded", 200, probe_target)
+        upsert_rollups(conn, [rollup], computed_at=NOW)
+    finally:
+        conn.close()
+
+
+def test_detail_probe_depth_is_none_for_an_unprobed_api(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, ["a"])
+    assert _client(settings).get("/v1/apis/a").json()["probe_depth"] is None
+
+
+def test_detail_probe_depth_is_site_when_the_rollup_target_is_the_base_url(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_rollup(settings, _rec("a"), "https://a.example.com")
+    assert _client(settings).get("/v1/apis/a").json()["probe_depth"] == "site"
+
+
+def test_detail_probe_depth_is_endpoint_when_the_rollup_target_differs(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_rollup(settings, _rec("a"), "https://a.example.com/v1/ping")
+    assert _client(settings).get("/v1/apis/a").json()["probe_depth"] == "endpoint"
+
+
+def test_detail_probe_depth_ignores_the_apis_table_probe_target(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed_rollup(settings, _rec("a"), "https://a.example.com")
+    conn = connect(settings)
+    try:
+        conn.execute(
+            "UPDATE apis SET probe_target = ? WHERE id = ?", ("https://a.example.com/x", "a")
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    assert _client(settings).get("/v1/apis/a").json()["probe_depth"] == "site"
