@@ -5,9 +5,10 @@
 {% block body %}
 <div class="prose">
 <h1 id="project-page">About apipulse</h1>
-<p>apipulse is a live-probe quality index for public APIs. Once a day it checks one
-representative endpoint of each listed API and publishes reachability, latency, auth and
-rate-limit signals, so you can see which public APIs actually work today.</p>
+<p>apipulse is a live-probe quality index for public APIs. Once a day it sends one request to
+each listed API, at an endpoint taken from the API's OpenAPI spec when one is known and at the
+API's website otherwise, and publishes reachability, latency, auth and rate-limit signals, so
+you can see which public APIs actually work today.</p>
 
 <h2>What a probe sends</h2>
 <ul>
