@@ -235,13 +235,16 @@ def test_hostile_name_and_description_are_inert_on_a_card(tmp_path):
     assert "javascript:" not in card
 
 
-def test_heading_shows_the_count_and_twelve_cards_are_open_with_the_rest_in_details(tmp_path):
+def test_count_is_in_the_sentence_only_and_twelve_cards_are_open_with_the_rest_in_details(tmp_path):
     ids = [f"api-{n:02d}" for n in range(15)]
     html = _index(
         _site(tmp_path, [_rec(i) for i in ids], [_good(i, 10 + n) for n, i in enumerate(ids)])
     )
     heading = re.search(r"<h2[^>]*>\s*Works without a key(.*?)</h2>", html, re.S)[1]
-    assert "15" in _text(heading)
+    assert _text(heading) == ""
+    assert _text(re.search(r'<span class="sub">(.*?)</span>', html, re.S)[1]).startswith(
+        "15 APIs answered a documented endpoint with no key on every day probed"
+    )
     head, rest = html.split('<details class="more"', 1)
     assert _card_ids(head.split("Works without a key", 1)[1]) == ids[:12]
     details = rest.split("</details>", 1)[0]
@@ -565,3 +568,15 @@ def test_about_page_explains_the_labels(tmp_path):
         assert needle in text, needle
     legend = re.search(r'<div class="legend".*?</div>', section[1], re.S)
     assert legend and "not probed" in legend[0]
+
+
+def test_counts_use_thousands_separators_on_the_server_and_in_the_client(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    _seed(settings, [_rec(f"api-{n:04d}") for n in range(1001)])
+    render_site(settings)
+    html = _index(tmp_path / "site")
+    assert "Showing 1,001 of 1,001" in html and "Search 1,001 APIs" in html
+    script = _script(html)
+    assert 'Intl.NumberFormat("en-US")' in script
+    assert re.search(r'"Showing " \+ number\.format\(Math\.min\(shown, matches\.length\)\)', script)
+    assert re.search(r'" of " \+ number\.format\(matches\.length\)', script)
