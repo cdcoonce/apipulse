@@ -18,7 +18,7 @@ def _has_data(rollup: Rollup | None) -> bool:
 def badge_text(rollup: Rollup | None) -> str:
     if rollup is None or not _has_data(rollup):
         return "no data"
-    text = f"reachable {rollup.reachable_30d}/30"
+    text = f"reachable {rollup.reachable_30d}/{rollup.days_observed_30d}"
     if rollup.p50_ms is not None:
         text += f" · {rollup.p50_ms} ms"
     return text
@@ -27,9 +27,10 @@ def badge_text(rollup: Rollup | None) -> str:
 def badge_color(rollup: Rollup | None) -> str:
     if rollup is None or not _has_data(rollup):
         return GREY
-    if rollup.reachable_30d >= 27:
+    reachable, observed = rollup.reachable_30d, rollup.days_observed_30d
+    if 10 * reachable >= 9 * observed:
         return GREEN
-    if rollup.reachable_30d >= 15:
+    if 2 * reachable >= observed:
         return YELLOW
     return RED
 
