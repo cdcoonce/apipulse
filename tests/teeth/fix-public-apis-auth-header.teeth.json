@@ -1,0 +1,73 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "1 B1 auth index is constant 2, not header-derived",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "auth_index = _auth_index(before) if \"|\" in before else None",
+      "replace": "auth_index = 2"
+    },
+    {
+      "label": "2 B6 header compare case-sensitive",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "if cell.lower() == \"auth\":",
+      "replace": "if cell == \"Auth\":"
+    },
+    {
+      "label": "3 B2 no-Auth table skips rows",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "        auth = \"\"\n        if auth_index is not None and auth_index < len(cells):",
+      "replace": "        if auth_index is None:\n            continue\n        auth = \"\"\n        if auth_index is not None and auth_index < len(cells):"
+    },
+    {
+      "label": "4 B3 non-table line no longer clears auth index",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "        if \"|\" not in line:\n            auth_index = None\n            continue",
+      "replace": "        if \"|\" not in line:\n            continue"
+    },
+    {
+      "label": "5 B4 short row indexed without length guard",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "if auth_index is not None and auth_index < len(cells):",
+      "replace": "if auth_index is not None:"
+    },
+    {
+      "label": "6 B5 'No' no longer maps to None",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "declared_auth=None if not auth or auth.lower() == \"no\" else auth,",
+      "replace": "declared_auth=None if not auth else auth,"
+    },
+    {
+      "label": "7 [control] header cell text stripped twice",
+      "file": "../../src/apipulse/inventory.py",
+      "oracle": "real",
+      "find": "return [cell.strip() for cell in body.split(\"|\")]",
+      "replace": "return [cell.strip().strip() for cell in body.split(\"|\")]",
+      "expect": "survived",
+      "why": "strip() is idempotent, so a second strip leaves every cell unchanged."
+    }
+  ]
+}
