@@ -594,3 +594,222 @@ def test_category_option_counts_and_the_show_all_summary_use_thousands_separator
     assert re.search(r"<summary[^>]*>\s*Show all 1,001\s*</summary>", html)
     sub = re.search(r'<span class="sub">(.*?)</span>', html, re.S)[1]
     assert _text(sub).startswith("1,001 APIs answered a documented endpoint")
+
+
+# --- 5/3. the inline script's paging, control wiring and row builder, run under node ----------
+
+FAKE_DOM = """
+class El {
+  constructor(tag) {
+    this.tag = tag; this.children = []; this.attrs = {}; this.listeners = {};
+    this.className = ""; this.title = ""; this.href = ""; this.value = ""; this.checked = false;
+    this.hidden = false; this._text = "";
+  }
+  set textContent(v) { this._text = String(v); this.children = []; }
+  get textContent() { return this._text + this.children.map(c => c.textContent).join(""); }
+  appendChild(child) { this.children.push(child); return child; }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
+  fire(type) { (this.listeners[type] || []).forEach(fn => fn()); }
+}
+const __els = {};
+const __ids = ["q", "status", "cat", "ep", "rows", "count", "more", "empty", "apis-data"];
+for (const id of __ids) { __els[id] = new El("x"); }
+__els["apis-data"].textContent = %(data)s;
+global.document = {
+  createElement: tag => new El(tag),
+  createTextNode: text => { const n = new El("#text"); n._text = String(text); return n; },
+  getElementById: id => __els[id],
+};
+"""
+
+STEPS_RUNNER = """
+function __snap() {
+  const rows = __els.rows.children.map(tr => ({
+    tr: tr.className,
+    cells: tr.children.map(td => ({
+      cls: td.className, text: td.textContent, kids: td.children.map(k => k.className),
+    })),
+  }));
+  return {
+    rows,
+    ids: rows.map((_, i) => __els.rows.children[i].children[0].children[1].textContent),
+    count: __els.count.textContent,
+    moreHidden: __els.more.hidden,
+    emptyHidden: __els.empty.hidden,
+  };
+}
+const __out = [__snap()];
+for (const step of %(steps)s) {
+  for (const [id, value] of Object.entries(step.set || {})) {
+    __els[id][typeof value === "boolean" ? "checked" : "value"] = value;
+  }
+  for (let n = 0; n < (step.times || 1); n++) { __els[step.fire[0]].fire(step.fire[1]); }
+  __out.push(__snap());
+}
+console.log(JSON.stringify(__out));
+"""
+
+
+def _drive_index_script(html: str, entries: list[dict], steps: list[dict]) -> list[dict]:
+    """Run the inline script against a fake DOM; return a snapshot before and after each step."""
+    program = (
+        FAKE_DOM % {"data": json.dumps(json.dumps(entries))}
+        + _script(html)
+        + STEPS_RUNNER % {"steps": json.dumps(steps)}
+    )
+    done = subprocess.run(
+        ["node", "-"], input=program, capture_output=True, text=True, check=True, timeout=60
+    )
+    return json.loads(done.stdout)
+
+
+def _client_entry(n: int) -> dict:
+    return {
+        "id": f"e{n:03d}",
+        "name": f"Name {n:03d}",
+        "description": "plain",
+        "tags": [],
+        "days": "..WW" if n % 3 == 0 else "..WR" if n % 3 == 1 else "..WD",
+        "categories": ["even"] if n % 2 == 0 else ["odd"],
+        "probe_depth": "endpoint" if n % 5 == 0 else "site" if n % 5 == 1 else None,
+        "auth": "keyless",
+        "declared_auth": "none",
+        "active": True,
+        "working_30d": 1,
+        "days_observed_30d": 2,
+        "reachable_30d": 1,
+        "p50_ms": 50,
+    }
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_inline_script_pages_by_100_and_wires_every_control(tmp_path):
+    entries = [_client_entry(n) for n in range(250)]
+    by_id = {e["id"]: e for e in entries}
+    # Three entries match "zeta"; e100 matches in two columns so it ranks first, then e200
+    # (reachable 30) before e007 (reachable 10), whatever their order in the data.
+    by_id["e100"].update(name="zeta", description="zeta", probe_depth="endpoint")
+    by_id["e200"].update(name="zeta", reachable_30d=30, probe_depth="site")
+    by_id["e007"].update(description="zeta", reachable_30d=10, probe_depth=None)
+    endpoint_ids = [e["id"] for e in entries if e["probe_depth"] == "endpoint"]
+    even_ids = [e["id"] for e in entries if e["categories"] == ["even"]]
+    dead_even = [
+        e["id"] for e in entries if e["categories"] == ["even"] and e["days"].endswith("D")
+    ]
+    assert len(endpoint_ids) == 49 and len(even_ids) == 125 and 0 < len(dead_even) < 125
+
+    steps = [
+        {"fire": ["more", "click"]},  # 1: 200 rows
+        {"fire": ["more", "click"]},  # 2: all 250
+        {"set": {"ep": True}, "fire": ["ep", "change"]},  # 3: endpoint only, paging resets
+        {"set": {"q": "zeta"}, "fire": ["q", "input"]},  # 4: search and endpoint together
+        {"set": {"ep": False}, "fire": ["ep", "change"]},  # 5: search alone
+        {"set": {"q": ""}, "fire": ["q", "input"]},  # 6: back to everything
+        {"fire": ["more", "click"], "times": 2},  # 7: paged to the end again
+        {"set": {"cat": "even"}, "fire": ["cat", "change"]},  # 8: 125 match: paging resets to 100
+        {"fire": ["more", "click"]},  # 9: the remaining 25
+        {"set": {"status": "D"}, "fire": ["status", "change"]},  # 10: category and status
+        {"set": {"q": "no-such-word"}, "fire": ["q", "input"]},  # 11: nothing matches
+    ]
+    html = _index(_site(tmp_path, [_rec("alpha")]))
+    snaps = _drive_index_script(html, entries, steps)
+    first_100 = [e["id"] for e in entries[:100]]
+
+    assert snaps[0]["ids"] == first_100
+    assert snaps[0]["count"] == "Showing 100 of 250" and snaps[0]["moreHidden"] is False
+    assert snaps[0]["emptyHidden"] is True
+    assert snaps[1]["ids"] == [e["id"] for e in entries[:200]]
+    assert snaps[1]["count"] == "Showing 200 of 250" and snaps[1]["moreHidden"] is False
+    assert snaps[2]["ids"] == [e["id"] for e in entries]
+    assert snaps[2]["count"] == "Showing 250 of 250" and snaps[2]["moreHidden"] is True
+    assert snaps[3]["ids"] == endpoint_ids
+    assert snaps[3]["count"] == "Showing 49 of 49" and snaps[3]["moreHidden"] is True
+    assert snaps[4]["ids"] == ["e100"] and snaps[4]["count"] == "Showing 1 of 1"
+    assert snaps[5]["ids"] == ["e100", "e200", "e007"]
+    assert snaps[5]["count"] == "Showing 3 of 3"
+    assert snaps[6]["ids"] == first_100 and snaps[6]["count"] == "Showing 100 of 250"
+    assert snaps[7]["ids"] == [e["id"] for e in entries]
+    assert snaps[8]["ids"] == even_ids[:100]
+    assert snaps[8]["count"] == "Showing 100 of 125" and snaps[8]["moreHidden"] is False
+    assert snaps[9]["ids"] == even_ids and snaps[9]["count"] == "Showing 125 of 125"
+    assert snaps[9]["moreHidden"] is True
+    assert snaps[10]["ids"] == dead_even
+    assert snaps[10]["count"] == f"Showing {len(dead_even)} of {len(dead_even)}"
+    assert snaps[11]["ids"] == [] and snaps[11]["count"] == "Showing 0 of 0"
+    assert snaps[11]["emptyHidden"] is False and snaps[11]["moreHidden"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_inline_script_builds_the_same_rows_as_the_server(tmp_path):
+    settings = Settings(data_dir=tmp_path)
+    records = [
+        _rec(i, f"Name {i}", "", ("Open_Data", "geo"), declared_auth="apiKey")
+        for i in ("ep", "key", "unk", "site", "none", "gone", "down", "nomedian")
+    ]
+    ep_target = "https://{}.example.com/ep"
+    rollups = [
+        _good("ep", 120),
+        _good("key", 30, auth="key-required"),
+        _good("unk", 40, auth="unknown"),
+        _good("gone", 80),
+        Rollup("site", 3, 3, 3, 20, 20, NOW, "responded", 200, "https://site.example.com"),
+        Rollup("down", 0, 0, 3, None, None, NOW, "timeout", None, ep_target.format("down")),
+        Rollup(
+            "nomedian", 3, 3, 3, None, None, NOW, "responded", 200, ep_target.format("nomedian")
+        ),
+    ]
+    _seed(settings, records, rollups)
+    _deactivate(tmp_path, "gone")
+    _probes_for(
+        settings,
+        "down",
+        ep_target.format("down"),
+        [(NOW - timedelta(days=n), Outcome.timeout, None) for n in range(3)],
+    )
+    render_site(settings)
+    html = _index(tmp_path / "site")
+    entries = _embedded(html)
+    assert len(entries) == 8
+    snaps = _drive_index_script(html, entries, [])
+    client = dict(zip(snaps[0]["ids"], snaps[0]["rows"], strict=True))
+
+    def squeeze(text: str) -> str:
+        return re.sub(r"\s+", "", text)
+
+    for entry in entries:
+        api_id = entry["id"]
+        server_tr, server_cells = _row(html, api_id)
+        row = client[api_id]
+        got_tr = f'<tr class="{row["tr"]}">' if row["tr"] else "<tr>"
+        assert got_tr == server_tr, api_id
+        assert len(row["cells"]) == len(server_cells) == 5, api_id
+        for position, (cell, (attrs, inner)) in enumerate(
+            zip(row["cells"], server_cells, strict=True)
+        ):
+            server_class = (re.search(r'class="([^"]*)"', attrs) or [None, ""])[1]
+            assert cell["cls"] == server_class, (api_id, position)
+            if position == 0:  # the server puts whitespace between the name and the id
+                assert squeeze(cell["text"]) == squeeze(_text(inner)), api_id
+            else:
+                assert cell["text"] == _text(inner), (api_id, position)
+        server_pill = re.search(r'<span class="(pill [a-z]+)"', server_cells[4][1])
+        assert cell_pill(client[api_id]) == (server_pill[1] if server_pill else None), api_id
+
+    def text(api_id: str, position: int) -> str:
+        return client[api_id]["cells"][position]["text"]
+
+    assert text("site", 4) == "Site only · listed: API key"
+    assert text("none", 4) == "Not probed yet · listed: API key"
+    assert text("ep", 4) == "No key" and text("key", 4) == "Key required"
+    assert text("unk", 4) == "Unclear"
+    assert text("ep", 3) == "120 ms" and text("none", 3) == "—" and text("nomedian", 3) == "—"
+    assert client["gone"]["tr"] == "inactive" and client["ep"]["tr"] == ""
+    assert client["down"]["cells"][0]["cls"] == "api dead"
+    assert client["ep"]["cells"][0]["cls"] == "api"
+
+
+def cell_pill(row: dict) -> str | None:
+    """The class of the auth cell's pill, if it has one."""
+    kids = row["cells"][4]["kids"]
+    return kids[0] if kids and kids[0].startswith("pill") else None
