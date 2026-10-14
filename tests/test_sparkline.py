@@ -1,7 +1,8 @@
 import re
 
-from apipulse.sparkline import latency_sparkline
 from markupsafe import Markup
+
+from apipulse.sparkline import latency_sparkline
 
 
 def _polylines(svg: str) -> list[list[tuple[float, float]]]:

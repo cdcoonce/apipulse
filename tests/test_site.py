@@ -317,7 +317,7 @@ def test_api_page_renders_every_detail_payload_field(tmp_path):
         "204",
         "Key required",
         "Endpoint (taken from the OpenAPI spec)",
-        "apiKey",
+        "API key",
         "x-ratelimit-limit",
         "retry-after",
     ):

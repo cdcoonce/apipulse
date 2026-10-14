@@ -14,6 +14,7 @@ from apipulse.inventory import ApiRecord
 from apipulse.labels import category_label, declared_auth_label, plain_text
 from apipulse.prober import USER_AGENT
 from apipulse.rollup import WINDOW_DAYS, Rollup, day_strip, empty_rollup, probe_depth
+from apipulse.sparkline import latency_sparkline
 from apipulse.store import (
     ProbeRow,
     SearchHit,
@@ -59,6 +60,7 @@ def _env() -> Environment:
     )
     env.globals["is_http_url"] = is_http_url
     env.globals["day_strip"] = day_strip
+    env.globals["latency_sparkline"] = latency_sparkline
     env.filters["declared_auth_label"] = declared_auth_label
     env.filters["category_label"] = category_label
     env.filters["plain_text"] = plain_text
@@ -142,6 +144,20 @@ def _strip_now(anchor: datetime | None, probes: dict[str, list[ProbeRow]]) -> da
     return max([anchor, *newest])
 
 
+def _strip_dates(strip_now: datetime | None) -> list[str]:
+    """The UTC date of each strip cell, oldest first, ending at the strip_now date."""
+    if strip_now is None:
+        return []
+    first = (strip_now - timedelta(days=WINDOW_DAYS)).astimezone(UTC).date()
+    return [(first + timedelta(days=i)).isoformat() for i in range(WINDOW_DAYS + 1)]
+
+
+def _latency_by_date(history: list[dict], dates: list[str]) -> list[int | None]:
+    """One latency per strip date: that day's history elapsed_ms, None when there is none."""
+    elapsed = {h["date"]: h["elapsed_ms"] for h in history}
+    return [elapsed.get(date) for date in dates]
+
+
 def _prune(directory: Path, suffix: str, keep: set[str]) -> None:
     """Delete stale generated files; only direct children with this suffix are touched."""
     for path in directory.iterdir():
@@ -200,6 +216,8 @@ def render_site(settings: Settings, *, out_dir: Path | None = None) -> RenderSum
         )
         for h in hits
     ]
+    days_by_id = {e["id"]: e["days"] for e in entries}
+    dates = _strip_dates(strip_now)
     # Every template gets the strip end (the footer reads its UTC date) and the page root.
     shell = {
         "strip_now": strip_now,
@@ -225,7 +243,17 @@ def render_site(settings: Settings, *, out_dir: Path | None = None) -> RenderSum
     for api, active in apis:
         rollup = rollups.get(api.id) or empty_rollup(api.id)
         payload = detail_payload(api, active, rollup, probes.get(api.id, []))
-        _write(pages_dir / f"{api.id}.html", page.render(d=payload, root="../", **shell))
+        _write(
+            pages_dir / f"{api.id}.html",
+            page.render(
+                d=payload,
+                root="../",
+                days=days_by_id[api.id],
+                strip_dates=dates,
+                latencies=_latency_by_date(payload["history"], dates),
+                **shell,
+            ),
+        )
         _write(badge_dir / f"{api.id}.svg", render_badge(rollups.get(api.id), api.id))
     removed = [{"key": key, "date": recorded_at[:10]} for key, recorded_at in optouts]
     _write(
