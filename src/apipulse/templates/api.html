@@ -1,37 +1,117 @@
 {% extends "base.html" %}
+{% from "_ui.html" import status_pill, fact, big_strip, legend, ms %}
+{% set current = "apis" %}
 {% block title %}{{ d.id }} - apipulse{% endblock %}
 {% block body %}
 {% macro show(value) %}{{ value if value is not none else "—" }}{% endmacro %}
 {% macro link(url) %}{% if url is none %}—{% elif is_http_url(url) %}<a href="{{ url }}" rel="nofollow noopener">{{ url }}</a>{% else %}{{ url }}{% endif %}{% endmacro %}
+<style>
+.api-head h1 { margin-bottom: .2rem; overflow-wrap: anywhere; }
+.api-id { font-family: var(--mono); font-size: .85rem; color: var(--faint); margin: 0 0 .7rem; overflow-wrap: anywhere; }
+.api-desc { color: var(--muted); max-width: 46rem; margin: .7rem 0; overflow-wrap: anywhere; }
+.api-top { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.pill.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; padding: .8rem .9rem; min-width: 0; overflow-wrap: anywhere; }
+.fact .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 600; margin-bottom: .3rem; }
+.fact .big { font-weight: 600; margin: 0 0 .25rem; }
+.fact .big.mono { font-family: var(--mono); font-size: .85rem; }
+.fact .sub { color: var(--muted); font-size: .85rem; margin: 0 0 .25rem; }
+.strip.big { display: grid; width: 100%; height: 2.4rem; gap: 2px; }
+.strip.big i { border-radius: 2px; }
+.strip-dates { display: flex; justify-content: space-between; font-family: var(--mono); font-size: .78rem; color: var(--muted); margin: .3rem 0 .6rem; }
+.spark { display: block; width: 100%; height: 3.2rem; color: var(--accent); overflow: visible; }
+.spark-cap { display: flex; justify-content: space-between; gap: .5rem; font-size: .78rem; color: var(--muted); margin-bottom: .2rem; }
+.spark-cap span:last-child { font-family: var(--mono); }
+.spark .dot { stroke-width: 4; }
+.spark polyline { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.api-log { margin-top: 1.4rem; }
+.api-log summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.api-log table { margin-top: .7rem; }
+.api-badge img { display: block; }
+@media (max-width: 1000px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .facts { grid-template-columns: 1fr; } }
+</style>
+{% set categories = d.tags | map("category_label") | select | unique | sort | list %}
+<div class="api-head">
 <h1>{{ d.name }}</h1>
+<p class="api-id">{{ d.id }}</p>
+<div class="api-top">{{ status_pill(days, d.active) }}
+{%- if categories %}<span class="chips">{% for c in categories %}<span class="chip">{{ c }}</span>{% endfor %}</span>{% endif %}</div>
+<p class="api-desc">{{ d.description | plain_text(400) }}</p>
+</div>
+
+<section>
+<div class="facts">
+{% call fact("reliability", "Reliability") %}
+{% if d.days_observed_30d %}
+<p class="big">Worked on {{ d.working_30d }} of {{ d.days_observed_30d }} probed days</p>
+<p class="sub">Answered on {{ d.reachable_30d }} of {{ d.days_observed_30d }}, last 30 days</p>
+{% else %}
+<p class="big">Not probed yet</p>
+{% endif %}
+{% endcall %}
+{% call fact("latency", "Latency") %}
+<p class="big">p50 {{ ms(d.latency.p50_ms) }} · p95 {{ ms(d.latency.p95_ms) }}</p>
+<p class="sub">Responses in the last 30 days</p>
+{% endcall %}
+{% call fact("auth", "Auth") %}
+{% if d.probe_depth == "endpoint" %}
+<p class="big">{% if d.auth.classified == "keyless" %}<span class="pill ok">No key needed</span>{% elif d.auth.classified == "key-required" %}<span class="pill key">Key required</span>{% else %}<span class="pill unk">Unclear</span>{% endif %}</p>
+<p class="sub">Measured at an endpoint taken from the API's OpenAPI spec.</p>
+{% elif d.probe_depth == "site" %}
+<p class="big"><span class="pill unk">Not measured</span></p>
+<p class="sub">Only the API's website was probed, so auth was not measured. The source list declares: {{ d.auth.declared | declared_auth_label }}.</p>
+{% else %}
+<p class="big"><span class="pill unk">Not probed yet</span></p>
+{% endif %}
+{% if d.auth.signup_url is not none %}<p class="sub">Sign up: {{ link(d.auth.signup_url) }}</p>{% endif %}
+{% endcall %}
+{% call fact("last-probe", "Last probe") %}
+{% if d.last_probe %}
+<p class="big mono">{{ d.last_probe.at[:10] }} {{ d.last_probe.at[11:16] }} UTC</p>
+<p class="sub">{{ show(d.last_probe.outcome) }} · HTTP status {{ show(d.last_probe.status) }}</p>
+{% else %}
+<p class="big">—</p>
+{% endif %}
+{% endcall %}
+</div>
+</section>
+
+<section>
+<div class="sec-head"><h2>Last 31 days</h2>{{ legend() }}</div>
+{% if strip_dates %}
+{{ big_strip(strip_dates, days) }}
+{% set spark = latency_sparkline(latencies) %}
+{% if spark %}<div class="spark-cap"><span>Median latency per day</span><span>max {{ ms(latencies | reject("none") | max) }}</span></div>
+{{ spark }}
+{% else %}<p class="empty">Not enough latency data yet</p>{% endif %}
+{% else %}
+<p class="empty">Not probed yet</p>
+{% endif %}
+</section>
+
+<section>
+<h2>Details</h2>
 <dl>
-<dt>id</dt><dd>{{ d.id }}</dd>
 <dt>status</dt><dd id="status">{{ "active" if d.active else "inactive" }}</dd>
-<dt>description</dt><dd>{{ d.description }}</dd>
-<dt>tags</dt><dd>{{ d.tags | join(", ") }}</dd>
 <dt>base url</dt><dd>{{ link(d.base_url) }}</dd>
 <dt>spec url</dt><dd>{{ link(d.spec_url) }}</dd>
 <dt>probe target</dt><dd>{{ link(d.probe_target) }}</dd>
-<dt>reachable (30 days)</dt><dd>{{ d.reachable_30d }}</dd>
-<dt>working (30 days)</dt><dd>{{ d.working_30d }}</dd>
-<dt>days observed (30 days)</dt><dd>{{ d.days_observed_30d }}</dd>
-<dt>latency p50 (ms)</dt><dd>{{ show(d.latency.p50_ms) }}</dd>
-<dt>latency p95 (ms)</dt><dd>{{ show(d.latency.p95_ms) }}</dd>
-<dt>last probe</dt>
-<dd>{% if d.last_probe %}{{ d.last_probe.at }}, outcome {{ show(d.last_probe.outcome) }}, status {{ show(d.last_probe.status) }}{% else %}—{% endif %}</dd>
-</dl>
-<h2>Auth</h2>
-<dl>
-<dt>classified</dt><dd>{{ d.auth.classified }}</dd>
-<dt>declared</dt><dd>{{ show(d.auth.declared) }}</dd>
-<dt>signup url</dt><dd>{{ link(d.auth.signup_url) }}</dd>
-</dl>
-<h2>Rate limit</h2>
-<dl>
+<dt>Probe depth</dt><dd>{% if d.probe_depth == "endpoint" %}Endpoint (taken from the OpenAPI spec){% elif d.probe_depth == "site" %}Site only (the API's website){% else %}Not probed yet{% endif %}</dd>
+<dt>auth declared</dt><dd>{{ d.auth.declared | declared_auth_label }}</dd>
 <dt>headers seen</dt><dd>{{ d.ratelimit.headers_seen | join(", ") if d.ratelimit.headers_seen else "—" }}</dd>
 <dt>saw 429 (30 days)</dt><dd>{{ "yes" if d.ratelimit.saw_429_30d else "no" }}</dd>
 </dl>
-<h2>History (30 days)</h2>
+</section>
+
+<section>
+<h2>Badge</h2>
+<div class="api-badge"><img src="{{ root }}badge/{{ d.id }}.svg" alt="apipulse badge for {{ d.id }}"></div>
+<div class="api-log"><details>
+<summary>Daily probe log</summary>
 {% if d.history %}
 <table id="history">
 <thead><tr><th>date</th><th>outcome</th><th>status</th><th>elapsed ms</th></tr></thead>
@@ -44,4 +124,6 @@
 {% else %}
 <p>no probes recorded in the last 30 days</p>
 {% endif %}
+</details></div>
+</section>
 {% endblock %}

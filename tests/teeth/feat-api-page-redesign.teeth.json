@@ -1,0 +1,332 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "1 C1 pill uses last char of strip, not last non-dot",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "{%- set last = days.rstrip(\".\")[-1:] -%}",
+      "replace": "{%- set last = days[-1:] -%}"
+    },
+    {
+      "label": "2 C1 inactive API shows the strip status",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "{%- if not active -%}<span class=\"pill unk\" id=\"status-pill\">Inactive</span>",
+      "replace": "{%- if false -%}<span class=\"pill unk\" id=\"status-pill\">Inactive</span>"
+    },
+    {
+      "label": "3 C2 site depth shows the measured classification",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{% if d.probe_depth == \"endpoint\" %}\n<p class=\"big\">{% if d.auth.classified",
+      "replace": "{% if d.probe_depth in (\"endpoint\", \"site\") %}\n<p class=\"big\">{% if d.auth.classified"
+    },
+    {
+      "label": "4 C2 key-required maps to No key needed",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<span class=\"pill key\">Key required</span>",
+      "replace": "<span class=\"pill key\">No key needed</span>"
+    },
+    {
+      "label": "5 C3 strip dates offset by one day",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "first = (strip_now - timedelta(days=WINDOW_DAYS)).astimezone(UTC).date()",
+      "replace": "first = (strip_now - timedelta(days=WINDOW_DAYS - 1)).astimezone(UTC).date()"
+    },
+    {
+      "label": "6 C4 gaps do not break the line",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "            if current:\n                runs.append(current)\n            current = []\n        else:",
+      "replace": "            continue\n        else:"
+    },
+    {
+      "label": "7 C4 max 0 division guard removed",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "y = height - (value / top * height if top else 0)",
+      "replace": "y = height - value / top * height"
+    },
+    {
+      "label": "8 C4 a single point still returns an svg",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "if len(present) < 2:",
+      "replace": "if len(present) < 1:"
+    },
+    {
+      "label": "9 C4 page passes latencies newest-first",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "return [elapsed.get(date) for date in dates]",
+      "replace": "return [elapsed.get(date) for date in reversed(dates)]"
+    },
+    {
+      "label": "10 C6 probe log order reversed",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{% for h in d.history %}",
+      "replace": "{% for h in d.history | reverse %}"
+    },
+    {
+      "label": "11 control: round(x, 1) -> float(f'{x:.1f}')",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "return round(x, 1), round(y, 1)",
+      "replace": "return float(f\"{x:.1f}\"), float(f\"{y:.1f}\")",
+      "expect": "survived",
+      "why": "round(x, 1) and float(f'{x:.1f}') both round the exact binary value half-even to one decimal; the result is then formatted with :.1f again, so the bytes are identical"
+    },
+    {
+      "label": "12 A1 x at left edge, not cell centre",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "x = (index + 0.5) / cells * width",
+      "replace": "x = index / cells * width"
+    },
+    {
+      "label": "13 A2 last probe time as raw ISO",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{{ d.last_probe.at[:10] }} {{ d.last_probe.at[11:16] }} UTC",
+      "replace": "{{ d.last_probe.at }}"
+    },
+    {
+      "label": "x1 endpoint auth sentence dropped",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "Measured at an endpoint taken from the API's OpenAPI spec.",
+      "replace": ""
+    },
+    {
+      "label": "x2 site auth sentence shows raw declared value",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "The source list declares: {{ d.auth.declared | declared_auth_label }}.",
+      "replace": "The source list declares: {{ d.auth.declared }}."
+    },
+    {
+      "label": "x3 A1 svg loses preserveAspectRatio none",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "aria-label=\"{label}\" preserveAspectRatio=\"none\" '",
+      "replace": "aria-label=\"{label}\" '"
+    },
+    {
+      "label": "x4 A1 baseline not at y = height",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "y1=\"{height}\" y2=\"{height}\" '",
+      "replace": "y1=\"0\" y2=\"0\" '"
+    },
+    {
+      "label": "x5 A1 max label shows min latency",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "max {{ ms(latencies | reject(\"none\") | max) }}",
+      "replace": "max {{ ms(latencies | reject(\"none\") | min) }}"
+    },
+    {
+      "label": "x6 aria-label range lower bound is 0",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "label = f\"Median latency per day, {min(present)} to {top} ms\"",
+      "replace": "label = f\"Median latency per day, 0 to {top} ms\""
+    },
+    {
+      "label": "x7 reliability counts reachable not working",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "Worked on {{ d.working_30d }} of",
+      "replace": "Worked on {{ d.reachable_30d }} of"
+    },
+    {
+      "label": "x8 chips not de-duplicated",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "| select | unique | sort | list",
+      "replace": "| select | sort | list"
+    },
+    {
+      "label": "x9 chips not sorted",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "| select | unique | sort | list",
+      "replace": "| select | unique | list"
+    },
+    {
+      "label": "x10 description limit 400 -> 4000",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "plain_text(400)",
+      "replace": "plain_text(4000)"
+    },
+    {
+      "label": "x11 R maps to No answer",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "{%- elif last == \"R\" -%}<span class=\"pill warn\" id=\"status-pill\">Answered, not OK</span>",
+      "replace": "{%- elif last == \"R\" -%}<span class=\"pill warn\" id=\"status-pill\">No answer</span>"
+    },
+    {
+      "label": "x12 badge alt uses name not id",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "alt=\"apipulse badge for {{ d.id }}\"",
+      "replace": "alt=\"apipulse badge for {{ d.name }}\""
+    },
+    {
+      "label": "x13 signup link for any scheme",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{{ link(d.auth.signup_url) }}",
+      "replace": "<a href=\"{{ d.auth.signup_url }}\">{{ d.auth.signup_url }}</a>"
+    },
+    {
+      "label": "x14 details open by default",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<details>\n<summary>Daily probe log</summary>",
+      "replace": "<details open>\n<summary>Daily probe log</summary>"
+    },
+    {
+      "label": "x15 latency dash replaced by 0 for p95",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "p95 {{ ms(d.latency.p95_ms) }}",
+      "replace": "p95 {{ ms(d.latency.p95_ms or 0) }}"
+    },
+    {
+      "label": "x16 dot segment half-width 1.5 -> 0 (invisible dot)",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "x1=\"{x - 1.5:.1f}\" x2=\"{x + 1.5:.1f}\"",
+      "replace": "x1=\"{x:.1f}\" x2=\"{x:.1f}\""
+    },
+    {
+      "label": "y1 id loses monospace class",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<p class=\"api-id\">{{ d.id }}</p>",
+      "replace": "<p>{{ d.id }}</p>"
+    },
+    {
+      "label": "y2 strip end label repeats the start date",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "<span>{{ dates[0] }}</span><span>{{ dates[-1] }}</span></div>",
+      "replace": "<span>{{ dates[0] }}</span><span>{{ dates[0] }}</span></div>"
+    },
+    {
+      "label": "y3 saw 429 inverted",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{{ \"yes\" if d.ratelimit.saw_429_30d else \"no\" }}",
+      "replace": "{{ \"no\" if d.ratelimit.saw_429_30d else \"yes\" }}"
+    },
+    {
+      "label": "y4 site probe depth words dropped",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "Site only (the API's website)",
+      "replace": "\u2014"
+    },
+    {
+      "label": "y5 log summary renamed",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<summary>Daily probe log</summary>",
+      "replace": "<summary>Log</summary>"
+    },
+    {
+      "label": "y6 any non-empty url becomes a link",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "{% elif is_http_url(url) %}",
+      "replace": "{% elif url %}"
+    },
+    {
+      "label": "y7 badge src extension",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "src=\"{{ root }}badge/{{ d.id }}.svg\"",
+      "replace": "src=\"{{ root }}badge/{{ d.id }}.png\""
+    },
+    {
+      "label": "y8 sparkline y axis flipped",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "y = height - (value / top * height if top else 0)",
+      "replace": "y = value / top * height if top else 0"
+    },
+    {
+      "label": "y9 last probe shows outcome twice",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "HTTP status {{ show(d.last_probe.status) }}",
+      "replace": "HTTP status {{ show(d.last_probe.outcome) }}"
+    },
+    {
+      "label": "y10 coordinates rounded to two decimals",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "return round(x, 1), round(y, 1)",
+      "replace": "return round(x, 2), round(y, 2)"
+    },
+    {
+      "label": "y11 polyline loses non-scaling-stroke",
+      "file": "../../src/apipulse/sparkline.py",
+      "oracle": "real",
+      "find": "'vector-effect=\"non-scaling-stroke\"/>'\n        )\n        if len(points) == 1:",
+      "replace": "'/>'\n        )\n        if len(points) == 1:"
+    },
+    {
+      "label": "y12 unclear auth shown as No key needed",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "<span class=\"pill unk\">Unclear</span>",
+      "replace": "<span class=\"pill ok\">No key needed</span>"
+    },
+    {
+      "label": "y13 strip cell state D titled worked",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "\"D\": \"no answer\"",
+      "replace": "\"D\": \"worked\""
+    },
+    {
+      "label": "y14 reliability sub-line uses working not reachable",
+      "file": "../../src/apipulse/templates/api.html",
+      "oracle": "real",
+      "find": "Answered on {{ d.reachable_30d }} of",
+      "replace": "Answered on {{ d.working_30d }} of"
+    },
+    {
+      "label": "y15 latency series takes the wrong history key",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "elapsed = {h[\"date\"]: h[\"elapsed_ms\"] for h in history}",
+      "replace": "elapsed = {h[\"date\"]: h[\"status\"] for h in history}"
+    }
+  ]
+}

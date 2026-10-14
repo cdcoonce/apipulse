@@ -29,3 +29,24 @@
 <td class="auth" title="Not probed yet, so auth was not measured; this is what the source list declares"><span class="site-note">Not probed yet · listed: <b>{{ a.declared_auth }}</b></span></td>
 {%- endif -%}
 {%- endmacro %}
+
+{# Per-API page pieces. #}
+{% macro status_pill(days, active) -%}
+{%- set last = days.rstrip(".")[-1:] -%}
+{%- if not active -%}<span class="pill unk" id="status-pill">Inactive</span>
+{%- elif last == "W" -%}<span class="pill ok" id="status-pill">Worked on last probe</span>
+{%- elif last == "R" -%}<span class="pill warn" id="status-pill">Answered, not OK</span>
+{%- elif last == "D" -%}<span class="pill bad" id="status-pill">No answer</span>
+{%- else -%}<span class="pill unk" id="status-pill">Not probed yet</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro fact(name, label) -%}
+<article class="fact" id="fact-{{ name }}"><div class="label">{{ label }}</div>{{ caller() }}</article>
+{%- endmacro %}
+
+{% macro big_strip(dates, days) -%}
+{%- set names = {"W": "worked", "R": "answered, not OK", "D": "no answer", ".": "not probed"} -%}
+<span class="strip big" role="img" aria-label="Worked on {{ days.count('W') }} of {{ days | replace('.', '') | length }} probed days, {{ dates[0] }} to {{ dates[-1] }}">{% for c in days %}<i{% if c != "." %} class="{{ c }}"{% endif %} title="{{ dates[loop.index0] }}: {{ names[c] }}"></i>{% endfor %}</span>
+<div class="strip-dates"><span>{{ dates[0] }}</span><span>{{ dates[-1] }}</span></div>
+{%- endmacro %}
