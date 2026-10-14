@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from "_ui.html" import legend %}
+{% set current = "about" %}
 {% block title %}About apipulse{% endblock %}
 {% block body %}
+<div class="prose">
 <h1 id="project-page">About apipulse</h1>
 <p>apipulse is a live-probe quality index for public APIs. Once a day it checks one
 representative endpoint of each listed API and publishes reachability, latency, auth and
@@ -32,4 +35,20 @@ history, auth and rate-limit signals.</li>
 </ul>
 <p>Every API also has a badge at <code>badge/&lt;id&gt;.svg</code> and a machine-readable
 list in <a href="apis.json">apis.json</a>.</p>
+
+<h2>What the labels mean</h2>
+<ul>
+<li><strong>Endpoint probe.</strong> The probe called a real endpoint taken from the API's
+OpenAPI spec, so its status says whether the API itself answered.</li>
+<li><strong>Site probe.</strong> No endpoint was known, so the probe called the API's website
+instead. That shows the site is up, not that the API works.</li>
+<li><strong>Auth is measured only at endpoints.</strong> <em>No key</em>, <em>Key required</em>
+and <em>Unclear</em> appear only for an endpoint probe. <em>Listed</em> means what the
+public-apis list or APIs.guru declares about auth; apipulse did not measure it.</li>
+<li><strong>Worked</strong> means the API answered with an HTTP 2xx status.
+<strong>Answered</strong> means it sent any HTTP response, even an error.</li>
+<li><strong>The strip</strong> shows the last 31 days, oldest on the left, one cell per day:</li>
+</ul>
+{{ legend() }}
+</div>
 {% endblock %}

@@ -92,8 +92,8 @@
       "label": "client builds cells with innerHTML",
       "file": "../../src/apipulse/templates/index.html",
       "oracle": "real",
-      "find": "    td.textContent = text;",
-      "replace": "    td.innerHTML = text;"
+      "find": "node.textContent = text;",
+      "replace": "node.innerHTML = text;"
     },
     {
       "label": "any URL scheme becomes a link",

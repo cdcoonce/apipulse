@@ -1,0 +1,192 @@
+{
+  "runner": "pytest",
+  "test_command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "collect_command": [
+    "uv",
+    "run",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "mutants": [
+    {
+      "label": "1 verified: drop probe_depth==endpoint",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "        and e[\"probe_depth\"] == \"endpoint\"\n",
+      "replace": ""
+    },
+    {
+      "label": "2 verified: working==observed becomes working>0",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "e[\"working_30d\"] == e[\"days_observed_30d\"]",
+      "replace": "e[\"working_30d\"] > 0"
+    },
+    {
+      "label": "3 verified order: id only (drop p50)",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "key=lambda e: (e[\"p50_ms\"] is None, e[\"p50_ms\"] or 0, e[\"id\"])",
+      "replace": "key=lambda e: e[\"id\"]"
+    },
+    {
+      "label": "4 fold: first 12 visible becomes first 6 (cards 7-12 vanish)",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "{% for a in verified[:12] %}",
+      "replace": "{% for a in verified[:6] %}"
+    },
+    {
+      "label": "5 directory auth: site depth renders the measured pill",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "{%- if a.probe_depth == \"endpoint\" -%}",
+      "replace": "{%- if a.probe_depth in (\"endpoint\", \"site\") -%}"
+    },
+    {
+      "label": "6 directory auth: None depth rendered as Site only",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "<td class=\"auth\" title=\"Not probed yet, so auth was not measured; this is what the source list declares\"><span class=\"site-note\">Not probed yet · listed:",
+      "replace": "<td class=\"auth\" title=\"Not probed yet, so auth was not measured; this is what the source list declares\"><span class=\"site-note\">Site only · listed:"
+    },
+    {
+      "label": "7 strip: '.' renders class D",
+      "file": "../../src/apipulse/templates/_ui.html",
+      "oracle": "real",
+      "find": "<i{% if c != \".\" %} class=\"{{ c }}\"{% endif %}></i>",
+      "replace": "<i class=\"{{ 'D' if c == '.' else c }}\"></i>"
+    },
+    {
+      "label": "8 filterApis: status compares LAST char of days",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "String(api.days || \"\").replace(/\\.+$/, \"\").slice(-1) !== status",
+      "replace": "String(api.days || \"\").slice(-1) !== status"
+    },
+    {
+      "label": "9 filterApis: endpointOnly ignored",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "if (endpointOnly && api.probe_depth !== \"endpoint\") { return false; }",
+      "replace": "if (false && endpointOnly && api.probe_depth !== \"endpoint\") { return false; }"
+    },
+    {
+      "label": "10a plain_text: no word-boundary cut (hard slice)",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "    if text[room] != \" \" and \" \" in head:",
+      "replace": "    if False:"
+    },
+    {
+      "label": "10b plain_text: no ellipsis",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "    return head.rstrip() + _ELLIPSIS",
+      "replace": "    return head.rstrip()"
+    },
+    {
+      "label": "11 plain_text: markdown link kept as-is",
+      "file": "../../src/apipulse/labels.py",
+      "oracle": "real",
+      "find": "    text = _MARKDOWN_LINK.sub(r\"\\1\", text)\n",
+      "replace": "    pass\n"
+    },
+    {
+      "label": "12 footer: Data through uses the rollup anchor, not strip_now",
+      "file": "../../src/apipulse/render.py",
+      "oracle": "real",
+      "find": "f\"{strip_now.astimezone(UTC):%Y-%m-%d}\"",
+      "replace": "f\"{anchor.astimezone(UTC):%Y-%m-%d}\""
+    },
+    {
+      "label": "13a aria-current: About link marked on every page",
+      "file": "../../src/apipulse/templates/base.html",
+      "oracle": "real",
+      "find": "{% if current is defined and current == \"about\" %}",
+      "replace": "{% if current is defined %}"
+    },
+    {
+      "label": "13b aria-current: Removed link marked on every page",
+      "file": "../../src/apipulse/templates/base.html",
+      "oracle": "real",
+      "find": "{% if current is defined and current == \"removed\" %}",
+      "replace": "{% if current is defined %}"
+    },
+    {
+      "label": "x1 client page size 100 -> 10",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "var PAGE_SIZE = 100;",
+      "replace": "var PAGE_SIZE = 10;"
+    },
+    {
+      "label": "x2 Show more adds 1 row, not a page",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "    shown += PAGE_SIZE;",
+      "replace": "    shown += 1;"
+    },
+    {
+      "label": "x3 client auth cell: Site only / Not probed yet swapped",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "site ? \"Site only · listed: \" : \"Not probed yet · listed: \"",
+      "replace": "site ? \"Not probed yet · listed: \" : \"Site only · listed: \""
+    },
+    {
+      "label": "x4 client update() ignores the endpoint checkbox",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "endpointOnly: endpointBox.checked",
+      "replace": "endpointOnly: false"
+    },
+    {
+      "label": "x5 client update() ignores the search query",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "var ranked = query.value.trim() ? rankApis(apis, query.value) : apis;",
+      "replace": "var ranked = apis;"
+    },
+    {
+      "label": "x6 client ms() drops the unit",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "value + \" ms\"",
+      "replace": "value"
+    },
+    {
+      "label": "x7 client dead-API class tests W not D",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "var dead = api.days.replace(/\\.+$/, \"\").slice(-1) === \"D\";",
+      "replace": "var dead = api.days.replace(/\\.+$/, \"\").slice(-1) === \"W\";"
+    },
+    {
+      "label": "x8 client inactive row loses its class",
+      "file": "../../src/apipulse/templates/index.html",
+      "oracle": "real",
+      "find": "el(\"tr\", api.active ? \"\" : \"inactive\")",
+      "replace": "el(\"tr\", \"\")"
+    },
+    {
+      "label": "14 [control] reorder two independent CSS declarations in .chip",
+      "file": "../../src/apipulse/templates/base.html",
+      "oracle": "real",
+      "find": ".chip { font-size: .72rem; color: var(--muted);",
+      "replace": ".chip { color: var(--muted); font-size: .72rem;",
+      "expect": "survived",
+      "why": "Two independent declarations (font-size, color) in one rule commute; no behavior changes."
+    }
+  ]
+}

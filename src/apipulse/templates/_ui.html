@@ -1,0 +1,31 @@
+{# Shared UI pieces. Every value here is untrusted stored data: autoescaping stays on. #}
+{% macro ms(value) -%}
+{{ (value ~ " ms") if value is not none else "—" }}
+{%- endmacro %}
+
+{% macro strip(days) -%}
+<span class="strip" role="img" aria-label="Worked on {{ days.count('W') }} of {{ days | replace('.', '') | length }} probed days">{% for c in days %}<i{% if c != "." %} class="{{ c }}"{% endif %}></i>{% endfor %}</span>
+{%- endmacro %}
+
+{% macro legend() -%}
+<div class="legend"><span class="lw">worked</span><span class="lr">answered but not OK</span><span class="ld">no answer</span><span class="ln">not probed</span></div>
+{%- endmacro %}
+
+{% macro card(a) -%}
+<a class="card" href="apis/{{ a.id }}.html"><div class="top"><span class="nm">{{ a.name }}</span><span class="ms">{{ ms(a.p50_ms) }}</span></div><div class="desc">{{ a.description | plain_text(140) }}</div><div class="foot"><span class="chip">{{ a.categories[0] if a.categories else "uncategorized" }}</span>{{ strip(a.days) }}</div></a>
+{%- endmacro %}
+
+{% macro auth_cell(a) -%}
+{%- if a.probe_depth == "endpoint" -%}
+<td class="auth" title="Measured at an endpoint from the API's OpenAPI spec">
+{%- if a.auth == "keyless" -%}<span class="pill ok">No key</span>
+{%- elif a.auth == "key-required" -%}<span class="pill key">Key required</span>
+{%- else -%}<span class="pill unk">Unclear</span>
+{%- endif -%}
+</td>
+{%- elif a.probe_depth == "site" -%}
+<td class="auth" title="Probed at the API's website, so auth was not measured; this is what the source list declares"><span class="site-note">Site only · listed: <b>{{ a.declared_auth }}</b></span></td>
+{%- else -%}
+<td class="auth" title="Not probed yet, so auth was not measured; this is what the source list declares"><span class="site-note">Not probed yet · listed: <b>{{ a.declared_auth }}</b></span></td>
+{%- endif -%}
+{%- endmacro %}

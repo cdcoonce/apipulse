@@ -1,7 +1,7 @@
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
@@ -11,7 +11,7 @@ from apipulse.api import detail_payload, search_summary
 from apipulse.badge import render_badge
 from apipulse.config import Settings
 from apipulse.inventory import ApiRecord
-from apipulse.labels import category_label, declared_auth_label
+from apipulse.labels import category_label, declared_auth_label, plain_text
 from apipulse.prober import USER_AGENT
 from apipulse.rollup import WINDOW_DAYS, Rollup, day_strip, empty_rollup, probe_depth
 from apipulse.store import (
@@ -61,6 +61,7 @@ def _env() -> Environment:
     env.globals["day_strip"] = day_strip
     env.filters["declared_auth_label"] = declared_auth_label
     env.filters["category_label"] = category_label
+    env.filters["plain_text"] = plain_text
     return env
 
 
@@ -93,7 +94,7 @@ def _script_safe(text: str) -> str:
 
 
 def _entry(api: ApiRecord, hit: SearchHit, days: str) -> dict:
-    return {
+    entry = {
         **search_summary(hit),
         "description": api.description,
         "tags": list(api.tags),
@@ -101,6 +102,31 @@ def _entry(api: ApiRecord, hit: SearchHit, days: str) -> dict:
         "declared_auth": declared_auth_label(api.declared_auth),
         "categories": sorted({category_label(t) for t in api.tags}),
     }
+    # A tag that labels to "" (empty or underscore-only) is no category at all.
+    entry["categories"] = [label for label in entry["categories"] if label]
+    return entry
+
+
+def _verified(entries: list[dict]) -> list[dict]:
+    """The entries that answered keyless at an endpoint on every day they were probed."""
+    qualifying = [
+        e
+        for e in entries
+        if e["active"]
+        and e["probe_depth"] == "endpoint"
+        and e["auth"] == "keyless"
+        and e["days_observed_30d"] > 0
+        and e["working_30d"] == e["days_observed_30d"]
+    ]
+    return sorted(qualifying, key=lambda e: (e["p50_ms"] is None, e["p50_ms"] or 0, e["id"]))
+
+
+def _category_counts(entries: list[dict]) -> list[tuple[str, int]]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        for category in entry["categories"]:
+            counts[category] = counts.get(category, 0) + 1
+    return sorted(counts.items())
 
 
 def _strip_now(anchor: datetime | None, probes: dict[str, list[ProbeRow]]) -> datetime | None:
@@ -174,25 +200,40 @@ def render_site(settings: Settings, *, out_dir: Path | None = None) -> RenderSum
         )
         for h in hits
     ]
+    # Every template gets the strip end (the footer reads its UTC date) and the page root.
+    shell = {
+        "strip_now": strip_now,
+        "data_through": None if strip_now is None else f"{strip_now.astimezone(UTC):%Y-%m-%d}",
+    }
     apis_json = _dumps(entries)
     _write(out_dir / "apis.json", apis_json)
     index = env.get_template("index.html")
+    verified = _verified(entries)
     _write(
         out_dir / "index.html",
-        index.render(rows=entries, apis_json=Markup(_script_safe(apis_json)), root=""),
+        index.render(
+            rows=entries,
+            verified=verified,
+            categories=_category_counts(entries),
+            observed_days=max((e["days_observed_30d"] for e in entries), default=0),
+            apis_json=Markup(_script_safe(apis_json)),
+            root="",
+            **shell,
+        ),
     )
     page = env.get_template("api.html")
     for api, active in apis:
         rollup = rollups.get(api.id) or empty_rollup(api.id)
         payload = detail_payload(api, active, rollup, probes.get(api.id, []))
-        _write(pages_dir / f"{api.id}.html", page.render(d=payload, root="../"))
+        _write(pages_dir / f"{api.id}.html", page.render(d=payload, root="../", **shell))
         _write(badge_dir / f"{api.id}.svg", render_badge(rollups.get(api.id), api.id))
     removed = [{"key": key, "date": recorded_at[:10]} for key, recorded_at in optouts]
     _write(
-        out_dir / "removed.html", env.get_template("removed.html").render(removed=removed, root="")
+        out_dir / "removed.html",
+        env.get_template("removed.html").render(removed=removed, root="", **shell),
     )
     project = env.get_template("project.html")
-    _write(out_dir / "project.html", project.render(user_agent=USER_AGENT, root=""))
+    _write(out_dir / "project.html", project.render(user_agent=USER_AGENT, root="", **shell))
     _prune(pages_dir, ".html", {f"{api.id}.html" for api, _ in apis})
     _prune(badge_dir, ".svg", {f"{api.id}.svg" for api, _ in apis})
     return RenderSummary(pages=len(apis), removed=len(optouts), badges=len(apis), out_dir=out_dir)
