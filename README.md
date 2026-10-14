@@ -1,6 +1,6 @@
 # apipulse
 
-apipulse is a live-probe quality index for public APIs: it probes one representative endpoint of each public API daily without credentials and publishes reachability, latency, auth and rate-limit signals. The PRD is issue #1.
+apipulse is a live-probe quality index for public APIs: it probes each public API once a day without credentials, at an endpoint from its OpenAPI spec when one is known and at its website otherwise, and publishes reachability, latency, auth and rate-limit signals. The PRD is issue #1.
 
 ## Commands
 
